@@ -4,7 +4,7 @@
 
 This project adds GLM Coding Plan quota bars and reset countdowns after Context in an existing Claude HUD status line. Start with [README.md](README.md) for user-facing setup; [README.zh-CN.md](README.zh-CN.md) is its Chinese counterpart. Keep both aligned when changing behavior or installation instructions.
 
-- `glm-hud.mjs` reads GLM credentials, fetches and normalizes quota data, and manages the five-minute cache, request lock, timeout, and backoff.
+- `glm-hud.mjs` reads GLM credentials, fetches and normalizes quota data, and manages the five-minute cache, request lock, first-fetch wait, timeout, and backoff. `check-multiwindow.mjs` tests separate processes against mock responses.
 - `hud-with-glm.mjs` calls the installed HUD's internal modules and adds quota bars after Context. `hud-path.mjs` locates an installed HUD version.
 - `setup.mjs` checks compatibility, installs the adapter, and restores the previous `statusLine` on uninstall. It must preserve unrelated settings and refuse to overwrite later status-line changes.
 - `.claude-plugin/` defines the plugin and its marketplace; `skills/setup/` and `skills/uninstall/` expose the corresponding Claude Code commands.

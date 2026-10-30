@@ -15,7 +15,7 @@ The labels `5h已用` and `周已用` mean five-hour usage and weekly usage. Per
 
 - Reuses Claude HUD's bars and colors and keeps its model, project, Context, and other status lines.
 - Refreshes automatically every **five minutes**. Message-triggered redraws recalculate countdowns and use cached quota until the next query is due.
-- Shares a cache and request lock across windows using the same provider and API key; isolates other credentials.
+- Shares a cache and request lock across windows using the same Claude configuration directory, provider, and API key. Other credentials or configuration directories use separate caches.
 - Keeps the last quota and indicates its age on timeout, network error, or rate limiting; backs off after failures.
 - Installs without modifying Claude HUD's plugin files and backs up the previous status line for restoration.
 
@@ -81,7 +81,9 @@ Quota data comes from `/api/monitor/usage/quota/limit`, also used by the [offici
 
 Missing quota windows show `--`. Missing reset times omit the countdown. Once a reset time passes, `待重置` means the adapter is waiting for fresh server data. `d`, `h`, and `m` mean days, hours, and minutes.
 
-Requests time out after two seconds. For HTTP 429 the adapter uses `Retry-After`, capped at 24 hours; repeated failures extend the retry interval. Five minutes is the normal target, subject to provider reporting delays, Claude Code scheduling, and terminal redraw behavior. Queries stop when Claude Code closes.
+Requests time out after two seconds. On a cold start, concurrent windows without cached quota wait about 2.2 seconds at most for the first request; existing quota stays available during a refresh. If a refresh is interrupted, a later redraw can recover an abandoned lock after 10 seconds. For HTTP 429 the adapter uses `Retry-After`, capped at 24 hours; repeated failures extend the retry interval.
+
+Each window has its own Context and redraw schedule. Shared quota becomes visible in another window when that window redraws, so updates need not appear at the same instant. Five minutes is the normal query target, subject to provider reporting delays, Claude Code scheduling, and terminal redraw behavior. Queries stop when Claude Code closes.
 
 The cache contains quota values, reset times, and request state, not the API key. The installation backup contains only the `statusLine` field, not the complete settings file; a command in that field could itself contain sensitive data. Do not commit your personal Claude configuration, cache, or actual usage records.
 
@@ -126,7 +128,7 @@ No dependency installation is required:
 bun run test
 ```
 
-Tests use temporary directories and mock credentials; they do not require a real key, Claude Code, or Claude HUD. They cover cache boundaries, retry backoff, concurrent request deduplication, credential isolation, countdowns, narrow layouts, installation paths with spaces or quotes, repeated installation, and restoration. CI also tests against a [pinned Claude HUD 0.14.0 revision](https://github.com/jarrodwatts/claude-hud/tree/a235aa9e05e6b988a70dc54cf78fcbf6e98853c2).
+Tests use temporary directories and mock credentials; they do not require a real key, Claude Code, or Claude HUD. They cover cache boundaries, retry backoff, multi-process request deduplication and recovery, credential isolation, countdowns, narrow layouts, installation paths with spaces or quotes, repeated installation, and restoration. CI also tests against a [pinned Claude HUD 0.14.0 revision](https://github.com/jarrodwatts/claude-hud/tree/a235aa9e05e6b988a70dc54cf78fcbf6e98853c2).
 
 To inspect a quota label in JSON format:
 

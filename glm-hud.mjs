@@ -8,6 +8,8 @@ import { configDir as getConfigDir } from './hud-path.mjs';
 
 export const INTERVAL_MS = 300_000;
 const TIMEOUT_MS = 2_000;
+const LOCK_STALE_MS = 10_000;
+const FIRST_FETCH_WAIT_MS = 2_200;
 const HOSTS = new Set(['open.bigmodel.cn', 'api.z.ai']);
 
 async function readJson(path) {
@@ -89,7 +91,7 @@ async function acquire(path) {
     } catch (error) {
       if (error.code !== 'EEXIST') throw error;
       try {
-        if (Date.now() - (await stat(path)).mtimeMs <= 10_000) return null;
+        if (Date.now() - (await stat(path)).mtimeMs <= LOCK_STALE_MS) return null;
         await unlink(path);
       } catch (error) {
         if (error.code !== 'ENOENT') return null;
@@ -99,9 +101,30 @@ async function acquire(path) {
   return null;
 }
 
+async function waitForFirstSnapshot(cachePath, lockPath) {
+  const deadline = performance.now() + FIRST_FETCH_WAIT_MS;
+  while (performance.now() < deadline) {
+    const current = await readJson(cachePath);
+    if (current?.quota || current?.error) return current;
+    try {
+      if (Date.now() - (await stat(lockPath)).mtimeMs > LOCK_STALE_MS) break;
+    } catch (error) {
+      if (error.code === 'ENOENT') break;
+      throw error;
+    }
+    await new Promise(resolve => setTimeout(resolve, Math.max(0, Math.min(75, deadline - performance.now()))));
+  }
+  return await readJson(cachePath) || {};
+}
+
+function abandoned(cache, now) {
+  return Number.isFinite(cache?.pendingAt) && now - cache.pendingAt >= LOCK_STALE_MS;
+}
+
 export async function getSnapshot({ env = process.env, now = Date.now, fetchImpl = fetch } = {}) {
   const configDir = getConfigDir(env);
-  const settings = await readJson(join(configDir, 'settings.json'));
+  const needsSettings = env.ANTHROPIC_BASE_URL == null || env.ANTHROPIC_AUTH_TOKEN == null;
+  const settings = needsSettings ? await readJson(join(configDir, 'settings.json')) : null;
   const base = env.ANTHROPIC_BASE_URL ?? settings?.env?.ANTHROPIC_BASE_URL;
   const token = env.ANTHROPIC_AUTH_TOKEN ?? settings?.env?.ANTHROPIC_AUTH_TOKEN;
   // No custom base URL means Claude Code may be using Anthropic directly.
@@ -119,15 +142,20 @@ export async function getSnapshot({ env = process.env, now = Date.now, fetchImpl
   const cachePath = join(cacheDir, `${identity}.json`);
   const lockPath = `${cachePath}.lock`;
   let cache = await readJson(cachePath);
-  if (cache?.nextAttemptAt > now()) return cache;
+  if (cache?.nextAttemptAt > now() && !abandoned(cache, now())) {
+    return cache.quota || cache.error ? cache : waitForFirstSnapshot(cachePath, lockPath);
+  }
   const release = await acquire(lockPath);
-  if (!release) return await readJson(cachePath) || {};
+  if (!release) {
+    cache = await readJson(cachePath);
+    return cache?.quota || cache?.error ? cache : waitForFirstSnapshot(cachePath, lockPath);
+  }
   try {
     // Another process may have filled the cache between our first read and lock.
     cache = await readJson(cachePath);
-    if (cache?.nextAttemptAt > now()) return cache;
+    if (cache?.nextAttemptAt > now() && !abandoned(cache, now())) return cache;
     const startedAt = now();
-    cache = { ...cache, nextAttemptAt: startedAt + INTERVAL_MS };
+    cache = { ...cache, pendingAt: startedAt, nextAttemptAt: startedAt + INTERVAL_MS };
     // Reserve the next attempt before I/O, including if Claude Code cancels us.
     await save(cachePath, cache);
     let retryAfter = 0;
@@ -155,7 +183,8 @@ export async function getSnapshot({ env = process.env, now = Date.now, fetchImpl
         : known.test(error.message) ? error.message : '网络异常';
       const backoff = Math.min(1_800_000, INTERVAL_MS * 2 ** (failures - 1));
       const delay = Math.min(86_400_000, Math.max(backoff, retryAfter || 0));
-      cache = { ...cache, failures, error: reason, nextAttemptAt: startedAt + delay };
+      const { pendingAt: _pendingAt, ...previous } = cache;
+      cache = { ...previous, failures, error: reason, nextAttemptAt: startedAt + delay };
     }
     await save(cachePath, cache);
     return cache;

@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.3.1
+
+- Share the first quota response across concurrently starting windows and recover an interrupted refresh after its lock expires.
+- Avoid reading Claude settings when both provider and token are already in the environment.
+- Add multi-process tests for cold and warm caches, credential isolation, errors, and interrupted refreshes.
+
 ## 0.3.0
 
 - Support Claude HUD 0.14.0 while retaining compatibility with 0.0.11.
