@@ -77,7 +77,7 @@ bun setup.mjs install
 | 智谱国内 | `https://open.bigmodel.cn/api/anthropic` |
 | Z.ai 国际 | `https://api.z.ai/api/anthropic` |
 
-国内个人 Coding Plan 已实际联调；国际平台的地址适配已实现，尚无真实账户验证。仅向白名单官方域名发送 HTTPS 查询，禁止跟随重定向。切换到其他服务商时保留原 HUD，隐藏 GLM 扩展。
+国内个人 Coding Plan 已使用真实账户和 Claude HUD 0.0.11 联调；HUD 0.14.0 使用模拟配额数据验证。国际平台的地址适配已实现，尚无真实账户验证。仅向白名单官方域名发送 HTTPS 查询，禁止跟随重定向。切换到其他服务商时保留原 HUD，隐藏 GLM 扩展。
 
 配额数据来自官方插件也使用的 `/api/monitor/usage/quota/limit` 接口；接口字段和可用性可能变化。更多信息见[智谱官方插件说明](https://docs.bigmodel.cn/cn/coding-plan/extension/usage-query-plugin)。
 

@@ -13,7 +13,7 @@ This project adds GLM Coding Plan quota bars and reset countdowns after Context 
 
 The integration touches a user's Claude settings. Do not run installation, uninstallation, or a live quota query against the real user environment unless the task calls for it. Use a temporary `CLAUDE_CONFIG_DIR` and mock credentials when testing. Never print or commit API keys, user settings, cache files, or real quota data. Preserve the official HTTPS allowlist, credential isolation, cache locking, and error handling when changing the fetch path.
 
-The runtime depends on Bun and Claude HUD internals; versions 0.0.11 and 0.14.0 have been tested. CI checks a pinned 0.14.0 source revision. Keep the five-minute refresh, expanded layout behavior, missing/stale-data indicators, and existing status-line restoration intact unless the task explicitly changes them. The international Z.ai endpoint has not been verified with a real account.
+The runtime depends on Bun and Claude HUD internals; versions 0.0.11 and 0.14.0 have been tested. The Chinese GLM endpoint was tested with a real account on 0.0.11; the 0.14.0 compatibility check uses simulated quota data. CI checks a pinned 0.14.0 source revision. Keep the five-minute refresh, expanded layout behavior, missing/stale-data indicators, and existing status-line restoration intact unless the task explicitly changes them. The international Z.ai endpoint has not been verified with a real account.
 
 ## Validation
 

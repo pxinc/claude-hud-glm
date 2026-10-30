@@ -75,7 +75,7 @@ The adapter reads `ANTHROPIC_BASE_URL` and `ANTHROPIC_AUTH_TOKEN` from the proce
 | Zhipu China | `https://open.bigmodel.cn/api/anthropic` |
 | Z.ai international | `https://api.z.ai/api/anthropic` |
 
-The Chinese personal Coding Plan has been tested against a real account. International endpoint support is implemented but has not been tested with a real account. HTTPS requests go only to the official domain allowlist and redirects are disabled. Other providers retain the original HUD without the GLM extension.
+The Chinese personal Coding Plan was tested with a real account using Claude HUD 0.0.11; HUD 0.14.0 was tested with simulated quota data. International endpoint support is implemented but has not been tested with a real account. HTTPS requests go only to the official domain allowlist and redirects are disabled. Other providers retain the original HUD without the GLM extension.
 
 Quota data comes from `/api/monitor/usage/quota/limit`, also used by the [official usage-query plugin](https://docs.bigmodel.cn/cn/coding-plan/extension/usage-query-plugin). Endpoint fields and availability may change.
 
