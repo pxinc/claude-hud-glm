@@ -61,6 +61,7 @@ try {
   }
   assert.match(execute([setupPath, 'check']), /检查通过/);
   assert.match(execute([setupPath, 'install']), /已安装/);
+  assert.equal(JSON.parse(await readFile(join(root, 'settings.json'), 'utf8')).statusLine.refreshInterval, 15);
   for (const language of ['en', 'zh-Hans']) {
     const config = join(root, 'plugins/claude-hud/config.json');
     await mkdir(join(config, '..'), { recursive: true });

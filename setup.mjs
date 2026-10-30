@@ -86,7 +86,7 @@ export async function setup(action, dir = configDir()) {
   await mkdir(folder, { recursive: true, mode: 0o700 });
   state ||= { previous: settings.statusLine };
   const command = `${quote(process.execPath)} --env-file /dev/null ${quote(join(folder, 'hud-with-glm.mjs'))}`;
-  const installed = { ...settings.statusLine, type: 'command', command, refreshInterval: 300 };
+  const installed = { ...settings.statusLine, type: 'command', command, refreshInterval: 15 };
   state.installed = installed;
   // Save only statusLine, never the credential-bearing settings object.
   await atomic(statePath, state);
@@ -100,7 +100,7 @@ export async function setup(action, dir = configDir()) {
   }
   settings.statusLine = installed;
   await atomic(settingsPath, settings, original);
-  return '已安装：Context 后显示 GLM 额度与倒计时，每 5 分钟刷新。当前窗口未更新时重启 Claude Code。';
+  return '已安装：状态栏约每 15 秒重绘，GLM 额度最多每 5 分钟查询一次。当前窗口未更新时重启 Claude Code。';
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {

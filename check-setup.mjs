@@ -41,7 +41,7 @@ try {
   process.env.CLAUDE_CODE_PLUGIN_CACHE_DIR = join(root, 'plugins');
   await setup('install', root);
   const installed = JSON.parse(await readFile(settingsPath, 'utf8'));
-  assert.equal(installed.statusLine.refreshInterval, 300);
+  assert.equal(installed.statusLine.refreshInterval, 15);
   assert.equal(installed.statusLine.padding, 2);
   assert.deepEqual(installed.env, original.env);
   const statePath = join(root, 'claude-hud-glm/install-state.json');

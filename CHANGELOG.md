@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.4.0
+
+- Redraw each status line every 15 seconds while retaining the shared five-minute quota query cooldown.
+- Keep the cooldown after an interrupted query to prevent early retries across windows.
+- Serialize stale-lock recovery and test independent redraw schedules and interrupted requests.
+
 ## 0.3.1
 
 - Share the first quota response across concurrently starting windows and recover an interrupted refresh after its lock expires.

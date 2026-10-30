@@ -80,45 +80,92 @@ export function formatLabel(cache, now) {
 
 async function acquire(path) {
   const id = randomUUID();
+  async function claim() {
+    const handle = await open(path, 'wx', 0o600);
+    try { await handle.writeFile(JSON.stringify({ id })); }
+    finally { await handle.close(); }
+    return async () => {
+      if ((await readJson(path))?.id === id) await unlink(path).catch(() => {});
+    };
+  }
+  try { return await claim(); }
+  catch (error) { if (error.code !== 'EEXIST') throw error; }
+
+  let oldLock;
+  try {
+    oldLock = await stat(path);
+    if (Date.now() - oldLock.mtimeMs <= LOCK_STALE_MS) return null;
+  } catch (error) {
+    if (error.code === 'ENOENT') return null;
+    throw error;
+  }
+
+  // Serialize recovery of this stale inode so another window's new lock is not removed.
+  const guardPath = `${path}.reap-${oldLock.ino}`;
+  const guardId = randomUUID();
+  let guard;
   for (let attempt = 0; attempt < 2; attempt++) {
     try {
-      const handle = await open(path, 'wx', 0o600);
-      try { await handle.writeFile(JSON.stringify({ id })); }
-      finally { await handle.close(); }
-      return async () => {
-        if ((await readJson(path))?.id === id) await unlink(path).catch(() => {});
-      };
+      guard = await open(guardPath, 'wx', 0o600);
+      break;
     } catch (error) {
       if (error.code !== 'EEXIST') throw error;
       try {
-        if (Date.now() - (await stat(path)).mtimeMs <= LOCK_STALE_MS) return null;
-        await unlink(path);
+        if (Date.now() - (await stat(guardPath)).mtimeMs <= LOCK_STALE_MS) return null;
+        await unlink(guardPath);
       } catch (error) {
         if (error.code !== 'ENOENT') return null;
       }
     }
   }
-  return null;
+  if (!guard) return null;
+  try {
+    try { await guard.writeFile(JSON.stringify({ id: guardId })); }
+    finally { await guard.close(); }
+    const current = await stat(path).catch(error => {
+      if (error.code === 'ENOENT') return null;
+      throw error;
+    });
+    if (!current || current.ino !== oldLock.ino || Date.now() - current.mtimeMs <= LOCK_STALE_MS) return null;
+    await unlink(path).catch(error => { if (error.code !== 'ENOENT') throw error; });
+    try { return await claim(); }
+    catch (error) { if (error.code === 'EEXIST') return null; throw error; }
+  } finally {
+    if ((await readJson(guardPath))?.id === guardId) await unlink(guardPath).catch(() => {});
+  }
 }
 
-async function waitForFirstSnapshot(cachePath, lockPath) {
+async function waitForFirstSnapshot(cachePath, lockPath, now) {
   const deadline = performance.now() + FIRST_FETCH_WAIT_MS;
   while (performance.now() < deadline) {
     const current = await readJson(cachePath);
     if (current?.quota || current?.error) return current;
     try {
-      if (Date.now() - (await stat(lockPath)).mtimeMs > LOCK_STALE_MS) break;
+      await stat(lockPath);
     } catch (error) {
-      if (error.code === 'ENOENT') break;
-      throw error;
+      if (error.code === 'ENOENT') {
+        // A stale lock may be briefly absent while another window replaces it.
+        if (!current || current.nextAttemptAt > now()) break;
+      } else {
+        throw error;
+      }
     }
     await new Promise(resolve => setTimeout(resolve, Math.max(0, Math.min(75, deadline - performance.now()))));
   }
   return await readJson(cachePath) || {};
 }
 
-function abandoned(cache, now) {
+function interrupted(cache, now) {
   return Number.isFinite(cache?.pendingAt) && now - cache.pendingAt >= LOCK_STALE_MS;
+}
+
+function availableAt(cache) {
+  if (!cache) return 0;
+  return Math.max(
+    Number.isFinite(cache.nextAttemptAt) ? cache.nextAttemptAt : 0,
+    Number.isFinite(cache.fetchedAt) ? cache.fetchedAt + INTERVAL_MS : 0,
+    Number.isFinite(cache.pendingAt) ? cache.pendingAt + INTERVAL_MS + TIMEOUT_MS : 0,
+  );
 }
 
 export async function getSnapshot({ env = process.env, now = Date.now, fetchImpl = fetch } = {}) {
@@ -142,20 +189,21 @@ export async function getSnapshot({ env = process.env, now = Date.now, fetchImpl
   const cachePath = join(cacheDir, `${identity}.json`);
   const lockPath = `${cachePath}.lock`;
   let cache = await readJson(cachePath);
-  if (cache?.nextAttemptAt > now() && !abandoned(cache, now())) {
-    return cache.quota || cache.error ? cache : waitForFirstSnapshot(cachePath, lockPath);
+  if (availableAt(cache) > now()) {
+    if (interrupted(cache, now())) return { ...cache, error: '刷新未完成' };
+    return cache.quota || cache.error ? cache : waitForFirstSnapshot(cachePath, lockPath, now);
   }
   const release = await acquire(lockPath);
   if (!release) {
     cache = await readJson(cachePath);
-    return cache?.quota || cache?.error ? cache : waitForFirstSnapshot(cachePath, lockPath);
+    return cache?.quota || cache?.error ? cache : waitForFirstSnapshot(cachePath, lockPath, now);
   }
   try {
     // Another process may have filled the cache between our first read and lock.
     cache = await readJson(cachePath);
-    if (cache?.nextAttemptAt > now() && !abandoned(cache, now())) return cache;
+    if (availableAt(cache) > now()) return cache;
     const startedAt = now();
-    cache = { ...cache, pendingAt: startedAt, nextAttemptAt: startedAt + INTERVAL_MS };
+    cache = { ...cache, pendingAt: startedAt, nextAttemptAt: startedAt + INTERVAL_MS + TIMEOUT_MS };
     // Reserve the next attempt before I/O, including if Claude Code cancels us.
     await save(cachePath, cache);
     let retryAfter = 0;
@@ -175,7 +223,8 @@ export async function getSnapshot({ env = process.env, now = Date.now, fetchImpl
         throw new Error([401, 403].includes(response.status) ? '鉴权失败' : `HTTP${response.status}`);
       }
       const quota = normalize(await response.json());
-      cache = { quota, fetchedAt: now(), nextAttemptAt: startedAt + INTERVAL_MS, failures: 0 };
+      const fetchedAt = now();
+      cache = { quota, fetchedAt, nextAttemptAt: fetchedAt + INTERVAL_MS, failures: 0 };
     } catch (error) {
       const failures = Math.min(5, (cache.failures || 0) + 1);
       const known = /^(限流|鉴权失败|HTTP\d+|接口异常|数据格式变化|未识别配额)$/;
@@ -184,7 +233,7 @@ export async function getSnapshot({ env = process.env, now = Date.now, fetchImpl
       const backoff = Math.min(1_800_000, INTERVAL_MS * 2 ** (failures - 1));
       const delay = Math.min(86_400_000, Math.max(backoff, retryAfter || 0));
       const { pendingAt: _pendingAt, ...previous } = cache;
-      cache = { ...previous, failures, error: reason, nextAttemptAt: startedAt + delay };
+      cache = { ...previous, failures, error: reason, nextAttemptAt: now() + delay };
     }
     await save(cachePath, cache);
     return cache;
