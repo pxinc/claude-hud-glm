@@ -1,32 +1,34 @@
 # claude-hud-glm
 
-在现有 [Claude HUD](https://github.com/jarrodwatts/claude-hud) 的 Context 后显示 **GLM Coding Plan 的 5 小时／周额度、进度条和重置倒计时**。
+English | [简体中文](README.zh-CN.md)
+
+Display **GLM Coding Plan five-hour and weekly quota bars and reset countdowns** after Context in your existing [Claude HUD](https://github.com/jarrodwatts/claude-hud) status line.
 
 ```text
 [GLM] │ my-project git:(main)
 Context ████░░░░░░ 42% │ 5h已用 ███░░░░░░░ 30%·2h15m │ 周已用 ████░░░░░░ 45%·3d4h
 ```
 
-GLM Coding Plan quota bars and reset countdowns for an existing Claude HUD installation. Runs locally without model calls or a background daemon.
+The labels `5h已用` and `周已用` mean five-hour usage and weekly usage. Percentages show the amount **used**. The adapter runs locally without model calls or a background daemon.
 
-## 功能
+## Features
 
-- 复用 HUD 自带的条形和配色，保留原模型、项目、Context 和其他状态行。
-- 默认每 **5 分钟**自动刷新。消息触发的额外重绘读取缓存，并重新计算倒计时。
-- 同账户多窗口共享缓存和请求锁；不同平台／密钥的缓存隔离。
-- 超时、断网、限流时保留旧配额并提示数据年龄；失败后退避重试。
-- 不修改 claude-hud 插件文件，安装时备份状态栏配置，支持恢复。
+- Reuses Claude HUD's bars and colors and keeps its model, project, Context, and other status lines.
+- Refreshes automatically every **five minutes**. Message-triggered redraws use the cache and recalculate countdowns.
+- Shares a cache and request lock across windows for each account; isolates caches by provider and credential.
+- Keeps the last quota and indicates its age on timeout, network error, or rate limiting; backs off after failures.
+- Installs without modifying Claude HUD's plugin files and backs up the previous status line for restoration.
 
-## 前提
+## Requirements
 
-- macOS 或 Linux、[Bun](https://bun.sh/) 1.3+；Windows 安装尚未验证。
-- 已安装 Claude Code 和 claude-hud，并完成 HUD setup。
-- HUD 使用 **expanded 布局**，且显示 Context。compact 布局暂不支持。
-- 已将个人 GLM Coding Plan 配置到 Claude Code。
+- macOS or Linux and [Bun](https://bun.sh/) 1.3 or later. Windows installation has not been tested.
+- Claude Code and Claude HUD installed, with HUD setup completed.
+- HUD's **expanded layout** with Context visible. Compact layout is not supported.
+- A personal GLM Coding Plan configured in Claude Code.
 
-本项目实测 claude-hud **0.0.11**。它调用 HUD 的内部渲染模块，后续上游版本可能需要适配；安装前会检查所需接口。升级 HUD 后建议再次运行 `bun setup.mjs check`。
+Tested with Claude HUD **0.0.11**. This adapter imports HUD's internal rendering modules; a future HUD update may require changes. The installer checks the required interfaces. After updating HUD, run `bun setup.mjs check` again.
 
-若还没有安装 HUD，在 Claude Code 中运行：
+If Claude HUD is not installed, run these commands inside Claude Code:
 
 ```text
 /plugin marketplace add jarrodwatts/claude-hud
@@ -35,9 +37,9 @@ GLM Coding Plan quota bars and reset countdowns for an existing Claude HUD insta
 /claude-hud:setup
 ```
 
-## 插件市场安装
+## Install from the plugin marketplace
 
-在 Claude Code 中运行：
+Run inside Claude Code:
 
 ```text
 /plugin marketplace add pxinc/claude-hud-glm
@@ -46,11 +48,11 @@ GLM Coding Plan quota bars and reset countdowns for an existing Claude HUD insta
 /claude-hud-glm:setup
 ```
 
-前两步注册本项目的第三方插件市场并安装插件，最后一步配置状态栏。Claude Code 的插件设置目前不能直接设置主 `statusLine`，因此插件安装完成后仍需执行一次 setup；该命令会使用现有安装器检查依赖并备份原状态栏。
+The first two commands register this third-party marketplace and install the plugin. The final command configures the status line. Claude Code plugin settings cannot currently configure the main `statusLine`, so this one-time setup is required; it checks prerequisites and saves the previous status line.
 
-恢复时先运行 `/claude-hud-glm:uninstall`，再通过 `/plugin` 卸载插件。请先恢复状态栏，再卸载插件，以免丢失恢复命令入口。
+To remove the integration, run `/claude-hud-glm:uninstall` first, then uninstall the plugin through `/plugin`. Restore the status line before uninstalling the plugin so the restoration command remains available.
 
-## 从源码安装
+## Install from source
 
 ```sh
 git clone https://github.com/pxinc/claude-hud-glm.git
@@ -59,32 +61,32 @@ bun setup.mjs check
 bun setup.mjs install
 ```
 
-安装器自动寻找本机 Bun 和最新的完整 claude-hud 缓存版本，将三个运行文件复制到 `~/.claude/claude-hud-glm/`，设置 `statusLine.refreshInterval` 为 `300`。支持 `CLAUDE_CONFIG_DIR`。原有其他 Claude 设置保持不变。
+The installer locates Bun and the newest complete Claude HUD cache, copies three runtime files to `~/.claude/claude-hud-glm/`, and sets `statusLine.refreshInterval` to `300` seconds. It supports `CLAUDE_CONFIG_DIR` and preserves other Claude settings.
 
-不需要安装智谱的指令式查询插件。已有 Claude Code 窗口若没有自动更新，退出后重新启动。
+The separate official GLM usage-query plugin is not required. If an existing Claude Code window does not update automatically, restart it.
 
-## 凭据与数据
+## Credentials and data
 
-读取 `ANTHROPIC_BASE_URL` 和 `ANTHROPIC_AUTH_TOKEN`。优先使用当前进程环境变量，独立运行时回退读取 Claude Code 的 `settings.json` 中的 `env`。**无需在本项目填写或保存 API Key。**
+The adapter reads `ANTHROPIC_BASE_URL` and `ANTHROPIC_AUTH_TOKEN` from the process environment, falling back to the `env` object in Claude Code's `settings.json` when run independently. **You do not need to enter or save an API key in this project.**
 
-支持的官方服务商：
-
-| 平台 | Claude Code Base URL |
+| Provider | Claude Code base URL |
 |---|---|
-| 智谱国内 | `https://open.bigmodel.cn/api/anthropic` |
-| Z.ai 国际 | `https://api.z.ai/api/anthropic` |
+| Zhipu China | `https://open.bigmodel.cn/api/anthropic` |
+| Z.ai international | `https://api.z.ai/api/anthropic` |
 
-国内个人 Coding Plan 已实际联调；国际平台的地址适配已实现，尚无真实账户验证。仅向白名单官方域名发送 HTTPS 查询，禁止跟随重定向。切换到其他服务商时保留原 HUD，隐藏 GLM 扩展。
+The Chinese personal Coding Plan has been tested against a real account. International endpoint support is implemented but has not been tested with a real account. HTTPS requests go only to the official domain allowlist and redirects are disabled. Other providers retain the original HUD without the GLM extension.
 
-配额数据来自官方插件也使用的 `/api/monitor/usage/quota/limit` 接口；接口字段和可用性可能变化。更多信息见[智谱官方插件说明](https://docs.bigmodel.cn/cn/coding-plan/extension/usage-query-plugin)。
+Quota data comes from `/api/monitor/usage/quota/limit`, also used by the [official usage-query plugin](https://docs.bigmodel.cn/cn/coding-plan/extension/usage-query-plugin). Endpoint fields and availability may change.
 
-进度条和百分比表示**已用**。缺失额度显示 `--`；没有重置时刻则省略倒计时；超过重置时刻显示“待重置”，等待下一次服务端数据。`d`、`h`、`m` 分别表示天、小时、分钟。
+Missing quota windows show `--`. Missing reset times omit the countdown. Once a reset time passes, `待重置` means the adapter is waiting for fresh server data. `d`, `h`, and `m` mean days, hours, and minutes.
 
-2 秒查询超时；429 尊重 `Retry-After`，连续失败会延长重试间隔。每 5 分钟刷新是正常情况下的目标频率，平台统计延迟、Claude Code 的调度和终端重绘均可能影响显示时间。关闭 Claude Code 后不在后台继续查询。
+Requests time out after two seconds. For HTTP 429 the adapter respects `Retry-After`; repeated failures extend the retry interval. Five minutes is the normal target, subject to provider reporting delays, Claude Code scheduling, and terminal redraw behavior. Queries stop when Claude Code closes.
 
-缓存只保存配额、重置时间和请求状态，不保存密钥。安装备份只保存 `statusLine` 字段，不复制带有凭据的完整设置。请勿将个人 Claude 配置、缓存或实际使用记录提交到仓库。
+The cache contains quota values, reset times, and request state, not the API key. The installation backup contains only the `statusLine` field, not the complete credential-bearing settings file. Do not commit your personal Claude configuration, cache, or actual usage records.
 
-## 更新与卸载
+## Update and uninstall
+
+For a source installation:
 
 ```sh
 git pull
@@ -92,25 +94,25 @@ bun setup.mjs check
 bun setup.mjs install
 ```
 
-卸载并恢复安装前的状态栏：
+To restore the previous status line:
 
 ```sh
 bun setup.mjs uninstall
 ```
 
-重复安装保留最初的备份。若安装后又手动修改了状态栏，安装器和卸载器会停止自动覆盖，提示检查 `~/.claude/claude-hud-glm/install-state.json`。卸载保留运行文件和备份，以便重新安装；其他当前设置不受影响。
+Repeated installation retains the original backup. If the status line has been changed after installation, the installer and uninstaller stop rather than overwrite it; inspect `~/.claude/claude-hud-glm/install-state.json`. Uninstall leaves the runtime files and backup for future use and preserves other settings.
 
-## 开发与测试
+## Development and tests
 
-无需安装依赖：
+No dependency installation is required:
 
 ```sh
 bun run test
 ```
 
-测试使用临时目录和模拟凭据，不需要真实密钥、Claude Code 或 claude-hud。覆盖缓存边界、失败退避、并发去重、账户隔离、倒计时、窄屏布局、带空格／引号的安装路径、重复安装和卸载恢复。
+Tests use temporary directories and mock credentials; they do not require a real key, Claude Code, or Claude HUD. They cover cache boundaries, retry backoff, concurrent request deduplication, account isolation, countdowns, narrow layouts, installation paths with spaces or quotes, repeated installation, and restoration.
 
-独立查看 JSON 格式的用量文字：
+To inspect a quota label in JSON format:
 
 ```sh
 bun glm-hud.mjs
@@ -118,4 +120,4 @@ bun glm-hud.mjs
 
 ## License
 
-MIT。上游及参考项目见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。本项目与 Anthropic、智谱及 Z.ai 无官方隶属关系。
+[MIT](LICENSE)
