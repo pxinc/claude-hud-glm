@@ -35,7 +35,22 @@ GLM Coding Plan quota bars and reset countdowns for an existing Claude HUD insta
 /claude-hud:setup
 ```
 
-## 安装
+## 插件市场安装
+
+在 Claude Code 中运行：
+
+```text
+/plugin marketplace add pxinc/claude-hud-glm
+/plugin install claude-hud-glm@claude-hud-glm-marketplace
+/reload-plugins
+/claude-hud-glm:setup
+```
+
+前两步注册本项目的第三方插件市场并安装插件，最后一步配置状态栏。Claude Code 的插件设置目前不能直接设置主 `statusLine`，因此插件安装完成后仍需执行一次 setup；该命令会使用现有安装器检查依赖并备份原状态栏。
+
+恢复时先运行 `/claude-hud-glm:uninstall`，再通过 `/plugin` 卸载插件。请先恢复状态栏，再卸载插件，以免丢失恢复命令入口。
+
+## 从源码安装
 
 ```sh
 git clone https://github.com/pxinc/claude-hud-glm.git

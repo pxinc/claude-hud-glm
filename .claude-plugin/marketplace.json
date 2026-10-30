@@ -1,0 +1,12 @@
+{
+  "name": "claude-hud-glm-marketplace",
+  "owner": { "name": "pxinc" },
+  "metadata": { "description": "GLM Coding Plan quota integration for Claude HUD" },
+  "plugins": [
+    {
+      "name": "claude-hud-glm",
+      "source": "./",
+      "description": "GLM 5-hour and weekly quota bars with reset countdowns"
+    }
+  ]
+}
