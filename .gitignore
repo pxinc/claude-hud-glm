@@ -1,0 +1,11 @@
+node_modules/
+.DS_Store
+.env
+.env.*
+cache/
+install-state.json
+settings.json
+settings.local.json
+*.log
+*.tmp
+coverage/
