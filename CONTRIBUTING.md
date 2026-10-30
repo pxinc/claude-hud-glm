@@ -2,7 +2,7 @@
 
 For bugs, open an issue with the operating system, Bun, Claude Code, and Claude HUD versions; include steps to reproduce, expected behavior, and actual behavior. Remove API keys, personal paths, usage data, and other private information from any output. For vulnerabilities, follow [SECURITY.md](SECURITY.md).
 
-To propose a change, explain its purpose and validation in a pull request. Keep the English and Chinese READMEs aligned when behavior or installation steps change.
+To propose a change, explain its purpose and validation in a pull request. Follow the [code of conduct](CODE_OF_CONDUCT.md) and keep the English and Chinese READMEs aligned when behavior or installation steps change.
 
 Run the dependency-free checks locally:
 
