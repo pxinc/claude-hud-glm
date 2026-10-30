@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.5.0
+
+- Add English, Simplified Chinese, and Traditional Chinese status and setup messages.
+- Select language from an explicit override or locale, with English fallback.
+- Store language-independent error codes while supporting errors cached by older versions.
+
 ## 0.4.0
 
 - Redraw each status line every 15 seconds while retaining the shared five-minute quota query cooldown.

@@ -5,27 +5,29 @@ import { pathToFileURL, fileURLToPath } from 'node:url';
 import { spawn } from 'node:child_process';
 import { getSnapshot, INTERVAL_MS, remaining } from './glm-hud.mjs';
 import { findHud } from './hud-path.mjs';
+import { resolveLanguage, t, errorText } from './i18n.mjs';
 
 const stripAnsi = text => text.replace(/\x1b\[[0-9;]*m/g, '');
 
-export function appendQuota(lines, snapshot, colors, barWidth, columns, now = Date.now()) {
+export function appendQuota(lines, snapshot, colors, barWidth, columns, now = Date.now(), language = resolveLanguage()) {
   if (snapshot.label === '') return lines;
   const index = lines.findIndex(line => /^\s*(?:Context\b|上下文)/.test(stripAnsi(line)));
   if (index < 0) return lines; // Keep other layouts intact if Context is hidden.
   const { quotaBar, getQuotaColor, label, warning, RESET } = colors;
   const stale = Boolean(snapshot.error) || (snapshot.quota && now - snapshot.fetchedAt >= INTERVAL_MS);
   const parts = [];
-  for (const [name, window] of [['5h已用', snapshot.quota?.fiveHour], ['周已用', snapshot.quota?.weekly]]) {
+  for (const [name, window] of [[t('fiveHour', language), snapshot.quota?.fiveHour], [t('week', language), snapshot.quota?.weekly]]) {
     if (!window || !Number.isFinite(window.percent)) {
       parts.push(`${label(name)} ${label('--')}`);
       continue;
     }
-    const reset = remaining(window.resetAt, now);
+    const reset = remaining(window.resetAt, now, language);
     parts.push(`${label(name)} ${quotaBar(window.percent, barWidth)} ${getQuotaColor(window.percent)}${window.percent}%${RESET}${reset ? label(`·${reset}`) : ''}`);
   }
-  if (stale || snapshot.label) {
-    const age = snapshot.quota ? `·${Math.max(0, Math.floor((now - snapshot.fetchedAt) / 60_000))}m前` : '';
-    const reason = snapshot.error || snapshot.label?.replace(/^GLM --[（(]?|[）)]$/g, '') || '过期';
+  if (stale || snapshot.message || snapshot.label) {
+    const age = snapshot.quota ? `·${t('minutesAgo', language, { n: Math.max(0, Math.floor((now - snapshot.fetchedAt) / 60_000)) })}` : '';
+    const reason = snapshot.error ? errorText(snapshot.error, language)
+      : snapshot.message ? t(snapshot.message, language) : t('stale', language);
     parts.push(warning(`⚠ ${reason}${age}`));
   }
   // Add segments after Context. Wrap whole segments when the terminal is narrow.
@@ -79,7 +81,8 @@ export async function run(hudPath) {
   ]);
   const stdin = await stdinModule.readStdin();
   const enabled = stdin && !(typeof hud.isHudDisabled === 'function' && hud.isHudDisabled());
-  const snapshot = enabled ? await getSnapshot().catch(() => ({ label: 'GLM --（本地缓存异常）' })) : { label: '' };
+  const language = resolveLanguage();
+  const snapshot = enabled ? await getSnapshot().catch(() => ({ message: 'cacheError' })) : { label: '' };
   if (typeof rendering.renderLines === 'function' && typeof terminal.getTerminalWidth === 'function') {
     const configModule = await import(pathToFileURL(join(src, 'config.ts')).href);
     const config = await configModule.loadConfig();
@@ -91,7 +94,7 @@ export async function run(hudPath) {
     const columns = terminal.getTerminalWidth();
     const outputWidth = config.forceMaxWidth && config.maxWidth ? config.maxWidth : (columns ?? config.maxWidth ?? 0);
     const width = columns === null || columns >= 100 ? 10 : columns >= 60 ? 6 : 4;
-    for (const line of appendQuota(lines, snapshot, getColors(palette, config.colors), width, outputWidth)) console.log(line);
+    for (const line of appendQuota(lines, snapshot, getColors(palette, config.colors), width, outputWidth, Date.now(), language)) console.log(line);
     return;
   }
   await hud.main({
@@ -110,7 +113,7 @@ export async function run(hudPath) {
       const columns = Number.parseInt(process.env.COLUMNS || '', 10)
         || process.stdout.columns || process.stderr.columns || 0;
       let result = lines;
-      try { result = appendQuota(lines, snapshot, colors, terminal.getAdaptiveBarWidth(), columns); }
+      try { result = appendQuota(lines, snapshot, colors, terminal.getAdaptiveBarWidth(), columns, Date.now(), language); }
       catch { /* Preserve the original HUD even if an updated renderer is incompatible. */ }
       for (const line of result) output(line);
     },

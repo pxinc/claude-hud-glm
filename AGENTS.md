@@ -6,6 +6,7 @@ This project adds GLM Coding Plan quota bars and reset countdowns after Context 
 
 - `glm-hud.mjs` reads GLM credentials, fetches and normalizes quota data, and manages the five-minute cache, request lock, first-fetch wait, timeout, and backoff. `check-multiwindow.mjs` tests separate processes against mock responses.
 - `hud-with-glm.mjs` calls the installed HUD's internal modules and adds quota bars after Context. `hud-path.mjs` locates an installed HUD version.
+- `i18n.mjs` selects English, Simplified Chinese, or Traditional Chinese from an explicit override or locale. Cache errors use language-independent codes; keep legacy cache translation and cross-language cache sharing intact.
 - `setup.mjs` checks compatibility, installs the adapter, and restores the previous `statusLine` on uninstall. It must preserve unrelated settings and refuse to overwrite later status-line changes.
 - `.claude-plugin/` defines the plugin and its marketplace; `skills/setup/` and `skills/uninstall/` expose the corresponding Claude Code commands.
 
@@ -19,6 +20,6 @@ The runtime depends on Bun and Claude HUD internals; versions 0.0.11 and 0.14.0 
 
 Run `bun run test`. The checks use temporary directories and do not need a real key, Claude Code, or Claude HUD. For plugin metadata changes, also run `claude plugin validate .` if Claude Code is installed. When the repository contains both marketplace and plugin manifests, that command validates the marketplace; validate the plugin manifest separately with a temporary copy that omits `marketplace.json`.
 
-For HUD integration changes, run `CLAUDE_HUD_SOURCE=/path/to/claude-hud bun check-upstream.mjs` against a source checkout. Add `--marketplace` when Claude Code is available to test the marketplace installation and removal in the same isolated environment.
+For HUD integration changes, run `CLAUDE_HUD_SOURCE=/path/to/claude-hud bun check-upstream.mjs` against a source checkout. Add `--marketplace` when Claude Code is available to test the marketplace installation and removal in the same isolated environment. Tests must cover all supported languages and English fallback when locale behavior changes.
 
 The project is licensed under MIT; retain [LICENSE](LICENSE).

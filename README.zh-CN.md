@@ -4,8 +4,6 @@
 
 在现有 [Claude HUD](https://github.com/jarrodwatts/claude-hud) 的 Context 后显示 **GLM Coding Plan 的 5 小时／周额度、进度条和重置倒计时**。
 
-状态标签和安装提示目前为中文。
-
 ```text
 [GLM] │ my-project git:(main)
 Context ████░░░░░░ 42% │ 5h已用 ███░░░░░░░ 30%·2h15m │ 周已用 ████░░░░░░ 45%·3d4h
@@ -62,9 +60,27 @@ bun setup.mjs check
 bun setup.mjs install
 ```
 
-安装器使用运行 setup 的 Bun，寻找最新的完整 claude-hud 缓存版本，将三个运行文件复制到 `~/.claude/claude-hud-glm/`，设置 `statusLine.refreshInterval` 为 `15` 秒。支持 `CLAUDE_CONFIG_DIR` 和 `CLAUDE_CODE_PLUGIN_CACHE_DIR`，保留其他 Claude 设置。额度查询仍受独立的 5 分钟冷却限制。
+安装器使用运行 setup 的 Bun，寻找最新的完整 claude-hud 缓存版本，将四个运行文件复制到 `~/.claude/claude-hud-glm/`，设置 `statusLine.refreshInterval` 为 `15` 秒。支持 `CLAUDE_CONFIG_DIR` 和 `CLAUDE_CODE_PLUGIN_CACHE_DIR`，保留其他 Claude 设置。额度查询仍受独立的 5 分钟冷却限制。
 
 不需要安装智谱的指令式查询插件。已有 Claude Code 窗口若没有自动更新，退出后重新启动。
+
+## 语言
+
+状态标签和安装提示支持英语（`en`）、简体中文（`zh-Hans`）和繁体中文（`zh-Hant`）。默认依次读取 `LC_ALL`、`LC_MESSAGES`、`LANG` 中第一个非空的区域设置：例如 `zh_CN` 选择简体中文，`zh_TW` 选择繁体中文。其他或无效区域设置（包括 `C`）回退到英语。语言由区域设置决定，不根据实际地理位置判断。
+
+要为 Claude Code 指定语言，将以下设置合并到 `~/.claude/settings.json` 原有的 `env` 中：
+
+```json
+{
+  "env": {
+    "CLAUDE_HUD_GLM_LANG": "zh-Hans"
+  }
+}
+```
+
+可设为 `en`、`zh-Hans` 或 `zh-Hant`，也接受 `zh-CN`、`zh-TW` 等区域设置。设为 `auto` 或删除该设置即可跟随区域设置；不支持的指定值回退到英语。已有 Claude Code 会话未生效时请重启。在终端直接运行 setup 命令时，请在终端环境中设置 `CLAUDE_HUD_GLM_LANG`。
+
+此设置只影响 GLM 扩展，不改变 Claude HUD 自身的语言。使用不同语言的窗口，只要配置目录、平台和 API Key 相同，仍共享额度缓存和查询冷却期。
 
 ## 凭据与数据
 
@@ -130,7 +146,7 @@ bun setup.mjs uninstall
 bun run test
 ```
 
-测试使用临时目录和模拟凭据，不需要真实密钥、Claude Code 或 claude-hud。覆盖缓存边界、失败退避、多进程并发去重与恢复、凭据隔离、倒计时、窄屏布局、带空格／引号的安装路径、重复安装和卸载恢复。CI 还会测试[固定修订版的 claude-hud 0.14.0](https://github.com/jarrodwatts/claude-hud/tree/a235aa9e05e6b988a70dc54cf78fcbf6e98853c2)。
+测试使用临时目录和模拟凭据，不需要真实密钥、Claude Code 或 claude-hud。覆盖语言选择、翻译显示与旧缓存错误、缓存边界、失败退避、多进程并发去重与恢复、凭据隔离、倒计时、窄屏布局、带空格／引号的安装路径、重复安装和卸载恢复。CI 还会测试[固定修订版的 claude-hud 0.14.0](https://github.com/jarrodwatts/claude-hud/tree/a235aa9e05e6b988a70dc54cf78fcbf6e98853c2)。
 
 独立查看 JSON 格式的用量文字：
 

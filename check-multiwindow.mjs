@@ -5,12 +5,13 @@ import { spawn } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { getSnapshot } from './glm-hud.mjs';
+import { getSnapshot, formatLabel } from './glm-hud.mjs';
+import { resolveLanguage } from './i18n.mjs';
 
 const base = 'https://open.bigmodel.cn/api/anthropic';
 if (process.argv[2] === '--worker') {
-  const [, , , root, count, token, resultKind, simulatedNow] = process.argv;
-  const env = { CLAUDE_CONFIG_DIR: root, ANTHROPIC_BASE_URL: base, ANTHROPIC_AUTH_TOKEN: token };
+  const [, , , root, count, token, resultKind, simulatedNow, language] = process.argv;
+  const env = { CLAUDE_CONFIG_DIR: root, ANTHROPIC_BASE_URL: base, ANTHROPIC_AUTH_TOKEN: token, CLAUDE_HUD_GLM_LANG: language };
   process.stdout.write('READY\n');
   await new Promise(resolve => process.stdin.once('data', resolve));
   const result = await getSnapshot({ env, now: simulatedNow ? () => Number(simulatedNow) : Date.now, fetchImpl: async () => {
@@ -22,7 +23,7 @@ if (process.argv[2] === '--worker') {
       { type: 'TOKENS_LIMIT', unit: 6, number: 1, percentage: 48 },
     ] } }));
   } });
-  process.stdout.write(`${JSON.stringify({ five: result.quota?.fiveHour?.percent, week: result.quota?.weekly?.percent, error: result.error })}\n`);
+  process.stdout.write(`${JSON.stringify({ five: result.quota?.fiveHour?.percent, week: result.quota?.weekly?.percent, error: result.error, label: formatLabel(result, simulatedNow ? Number(simulatedNow) : Date.now(), resolveLanguage(env)) })}\n`);
 } else {
   const root = await mkdtemp(join(tmpdir(), 'glm-windows-'));
   const children = [];
@@ -30,9 +31,9 @@ if (process.argv[2] === '--worker') {
     for (const child of children) if (child.exitCode === null) child.kill('SIGKILL');
   }, 30000);
   const script = fileURLToPath(import.meta.url);
-  async function windows(countPath, tokens, kind = 'success', dirs = tokens.map(() => root), simulatedNow = '') {
+  async function windows(countPath, tokens, kind = 'success', dirs = tokens.map(() => root), simulatedNow = '', languages = tokens.map(() => 'en')) {
     const tasks = tokens.map((token, index) => {
-      const child = spawn(process.execPath, [script, '--worker', dirs[index], countPath, token, kind, String(simulatedNow)], { stdio: ['pipe', 'pipe', 'pipe'] });
+      const child = spawn(process.execPath, [script, '--worker', dirs[index], countPath, token, kind, String(simulatedNow), languages[index]], { stdio: ['pipe', 'pipe', 'pipe'] });
       children.push(child);
       let output = '', error = '', ready = false;
       const initialized = new Promise((resolve, reject) => {
@@ -61,7 +62,12 @@ if (process.argv[2] === '--worker') {
     const count = join(root, 'requests.txt');
     await writeFile(count, '');
     const sameKey = Array(8).fill('fixture-key-A');
-    assert.ok(complete(await windows(count, sameKey)), 'cold-start windows should share the first result');
+    const languages = sameKey.map((_, i) => ['en', 'zh-Hans', 'zh-Hant'][i % 3]);
+    const cold = await windows(count, sameKey, 'success', sameKey.map(() => root), '', languages);
+    assert.ok(complete(cold), 'cold-start windows should share the first result');
+    for (const [i, window] of cold.entries()) {
+      assert.match(window.label, [/GLM used .*wk48%/, /GLM已用 .*周48%/, /GLM已用 .*週48%/][i % 3], 'each window renders the shared result in its own language');
+    }
     assert.equal((await readFile(count, 'utf8')).length, 1, 'cold-start windows issue one request');
     assert.ok(complete(await windows(count, sameKey)), 'warm-cache windows should display cached data');
     assert.equal((await readFile(count, 'utf8')).length, 1, 'warm-cache windows issue no new requests');
@@ -90,10 +96,10 @@ if (process.argv[2] === '--worker') {
     await writeFile(oldGuard, JSON.stringify({ id: 'abandoned-reaper' }));
     await utimes(oldGuard, new Date(old), new Date(old));
     const interrupted = await windows(count, Array(8).fill(token));
-    assert.ok(interrupted.every(result => result.error === '刷新未完成'), 'unfinished refresh should be shown');
+    assert.ok(interrupted.every(result => result.error === 'refreshPending'), 'unfinished refresh should be shown');
     assert.equal((await readFile(count, 'utf8')).length, 5, 'interruption must not trigger an early retry');
     const beforeCooldown = await windows(count, Array(8).fill(token), 'success', Array(8).fill(root), old + 301999);
-    assert.ok(beforeCooldown.every(result => result.error === '刷新未完成'));
+    assert.ok(beforeCooldown.every(result => result.error === 'refreshPending'));
     assert.equal((await readFile(count, 'utf8')).length, 5, 'the timeout allowance prevents an early retry');
     assert.ok(complete(await windows(count, Array(8).fill(token), 'success', Array(8).fill(root), old + 302001)), 'abandoned refresh should recover after the cooldown');
     assert.equal((await readFile(count, 'utf8')).length, 6, 'recovery issues one request after the cooldown');
@@ -110,7 +116,7 @@ if (process.argv[2] === '--worker') {
       env: { CLAUDE_CONFIG_DIR: root, ANTHROPIC_BASE_URL: base, ANTHROPIC_AUTH_TOKEN: staleToken },
       fetchImpl: async () => { throw new Error('Interrupted fetch must not retry early'); },
     });
-    assert.equal(stale.error, '刷新未完成');
+    assert.equal(stale.error, 'refreshPending');
     assert.equal(stale.quota.fiveHour.percent, 12, 'preserve the last quota after interruption');
 
     const failures = await windows(count, Array(8).fill('fixture-key-error'), 'error');

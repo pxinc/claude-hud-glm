@@ -1,6 +1,6 @@
 {
   "name": "claude-hud-glm",
-  "version": "0.4.0",
+  "version": "0.5.0",
   "description": "Show GLM Coding Plan quota and reset countdowns in Claude HUD",
   "author": { "name": "pxinc" },
   "repository": "https://github.com/pxinc/claude-hud-glm",

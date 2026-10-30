@@ -6,10 +6,10 @@ Display **GLM Coding Plan five-hour and weekly quota bars and reset countdowns**
 
 ```text
 [GLM] │ my-project git:(main)
-Context ████░░░░░░ 42% │ 5h已用 ███░░░░░░░ 30%·2h15m │ 周已用 ████░░░░░░ 45%·3d4h
+Context ████░░░░░░ 42% │ 5h used ███░░░░░░░ 30%·2h15m │ Week used ████░░░░░░ 45%·3d4h
 ```
 
-The labels `5h已用` and `周已用` mean five-hour usage and weekly usage. Percentages show the amount **used**. Status labels and setup messages are currently in Chinese. The adapter runs locally without model calls or a background daemon.
+Percentages show the amount **used**. The adapter runs locally without model calls or a background daemon.
 
 ## Features
 
@@ -62,9 +62,27 @@ bun setup.mjs check
 bun setup.mjs install
 ```
 
-The installer uses the Bun executable running the setup command, locates the newest complete Claude HUD cache, copies three runtime files to `~/.claude/claude-hud-glm/`, and sets `statusLine.refreshInterval` to `15` seconds. It supports `CLAUDE_CONFIG_DIR` and `CLAUDE_CODE_PLUGIN_CACHE_DIR` and preserves other Claude settings. Quota queries remain limited by a separate five-minute cooldown.
+The installer uses the Bun executable running the setup command, locates the newest complete Claude HUD cache, copies four runtime files to `~/.claude/claude-hud-glm/`, and sets `statusLine.refreshInterval` to `15` seconds. It supports `CLAUDE_CONFIG_DIR` and `CLAUDE_CODE_PLUGIN_CACHE_DIR` and preserves other Claude settings. Quota queries remain limited by a separate five-minute cooldown.
 
 The separate official GLM usage-query plugin is not required. If an existing Claude Code window does not update automatically, restart it.
+
+## Language
+
+Status labels and setup messages support English (`en`), Simplified Chinese (`zh-Hans`), and Traditional Chinese (`zh-Hant`). By default, the adapter reads the first nonempty locale from `LC_ALL`, `LC_MESSAGES`, and `LANG`, in that order. For example, `zh_CN` selects Simplified Chinese and `zh_TW` selects Traditional Chinese. Other or invalid locales, including `C`, use English. Selection uses the locale value, not the user's physical location.
+
+To select a language explicitly for Claude Code, merge this setting into the existing `env` object in `~/.claude/settings.json`:
+
+```json
+{
+  "env": {
+    "CLAUDE_HUD_GLM_LANG": "zh-Hans"
+  }
+}
+```
+
+Use `en`, `zh-Hans`, or `zh-Hant`; locale variants such as `zh-CN` and `zh-TW` are also accepted. Set `auto` or remove the setting to follow the locale. An unsupported explicit value falls back to English. Restart existing Claude Code sessions if they do not pick up the change. For setup commands run directly in a terminal, set `CLAUDE_HUD_GLM_LANG` in that terminal's environment.
+
+Language selection affects the GLM extension, not Claude HUD's own language. Windows with different languages still share the same quota cache and query cooldown when their configuration directory, provider, and API key match.
 
 ## Credentials and data
 
@@ -79,7 +97,7 @@ The Chinese personal Coding Plan was tested with a real account using Claude HUD
 
 Quota data comes from `/api/monitor/usage/quota/limit`, also used by the [official usage-query plugin](https://docs.bigmodel.cn/cn/coding-plan/extension/usage-query-plugin). Endpoint fields and availability may change.
 
-Missing quota windows show `--`. Missing reset times omit the countdown. Once a reset time passes, `待重置` means the adapter is waiting for fresh server data. `d`, `h`, and `m` mean days, hours, and minutes.
+Missing quota windows show `--`. Missing reset times omit the countdown. Once a reset time passes, `reset due` means the adapter is waiting for fresh server data. `d`, `h`, and `m` mean days, hours, and minutes.
 
 Requests time out after two seconds. On a cold start, concurrent windows without cached quota wait about 2.2 seconds at most for the first request; existing quota stays available during a refresh. After a completed request, the next attempt waits at least five minutes; an interrupted request retains its reserved cooldown. For HTTP 429 the adapter uses `Retry-After`, capped at 24 hours; repeated failures extend the retry interval.
 
@@ -128,7 +146,7 @@ No dependency installation is required:
 bun run test
 ```
 
-Tests use temporary directories and mock credentials; they do not require a real key, Claude Code, or Claude HUD. They cover cache boundaries, retry backoff, multi-process request deduplication and recovery, credential isolation, countdowns, narrow layouts, installation paths with spaces or quotes, repeated installation, and restoration. CI also tests against a [pinned Claude HUD 0.14.0 revision](https://github.com/jarrodwatts/claude-hud/tree/a235aa9e05e6b988a70dc54cf78fcbf6e98853c2).
+Tests use temporary directories and mock credentials; they do not require a real key, Claude Code, or Claude HUD. They cover locale selection, translated output and old cache errors, cache boundaries, retry backoff, multi-process request deduplication and recovery, credential isolation, countdowns, narrow layouts, installation paths with spaces or quotes, repeated installation, and restoration. CI also tests against a [pinned Claude HUD 0.14.0 revision](https://github.com/jarrodwatts/claude-hud/tree/a235aa9e05e6b988a70dc54cf78fcbf6e98853c2).
 
 To inspect a quota label in JSON format:
 

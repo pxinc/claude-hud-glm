@@ -8,7 +8,9 @@ import { configDir, findHud } from './hud-path.mjs';
 
 const root = await mkdtemp(join(tmpdir(), "hud-glm space's-"));
 const previousCacheRoot = process.env.CLAUDE_CODE_PLUGIN_CACHE_DIR;
+const previousLanguage = process.env.CLAUDE_HUD_GLM_LANG;
 process.env.CLAUDE_CODE_PLUGIN_CACHE_DIR = join(root, 'plugins');
+process.env.CLAUDE_HUD_GLM_LANG = 'zh-Hans';
 const settingsPath = join(root, 'settings.json');
 const original = { statusLine: { type: 'command', command: 'original-hud', padding: 2 }, env: { ANTHROPIC_AUTH_TOKEN: 'fixture-only-not-a-real-key' } };
 try {
@@ -39,7 +41,13 @@ try {
   process.env.CLAUDE_CODE_PLUGIN_CACHE_DIR = customPlugins;
   assert.ok((await findHud(root)).startsWith(customPlugins));
   process.env.CLAUDE_CODE_PLUGIN_CACHE_DIR = join(root, 'plugins');
+  process.env.CLAUDE_HUD_GLM_LANG = 'en';
+  assert.match(await setup('check', root), /compatibility check passed/);
+  process.env.CLAUDE_HUD_GLM_LANG = 'zh-Hant';
+  assert.match(await setup('check', root), /相容性檢查通過/);
+  process.env.CLAUDE_HUD_GLM_LANG = 'zh-Hans';
   await setup('install', root);
+  assert.ok((await readFile(join(root, 'claude-hud-glm/i18n.mjs'), 'utf8')).includes('resolveLanguage'));
   const installed = JSON.parse(await readFile(settingsPath, 'utf8'));
   assert.equal(installed.statusLine.refreshInterval, 15);
   assert.equal(installed.statusLine.padding, 2);
@@ -83,5 +91,7 @@ try {
 } finally {
   if (previousCacheRoot === undefined) delete process.env.CLAUDE_CODE_PLUGIN_CACHE_DIR;
   else process.env.CLAUDE_CODE_PLUGIN_CACHE_DIR = previousCacheRoot;
+  if (previousLanguage === undefined) delete process.env.CLAUDE_HUD_GLM_LANG;
+  else process.env.CLAUDE_HUD_GLM_LANG = previousLanguage;
   await rm(root, { recursive: true, force: true });
 }

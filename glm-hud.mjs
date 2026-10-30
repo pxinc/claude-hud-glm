@@ -5,6 +5,7 @@ import { join, resolve } from 'node:path';
 import { createHash, randomUUID } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { configDir as getConfigDir } from './hud-path.mjs';
+import { resolveLanguage, t, errorText } from './i18n.mjs';
 
 export const INTERVAL_MS = 300_000;
 const TIMEOUT_MS = 2_000;
@@ -28,9 +29,9 @@ async function save(path, value) {
 }
 
 export function normalize(payload) {
-  if (payload?.success === false) throw new Error('接口异常');
+  if (payload?.success === false) throw new Error('apiError');
   const limits = (payload?.data ?? payload)?.limits;
-  if (!Array.isArray(limits)) throw new Error('数据格式变化');
+  if (!Array.isArray(limits)) throw new Error('badResponse');
   const find = (unit, number) => {
     const item = limits.find(x => x.type === 'TOKENS_LIMIT'
       && Number(x.unit) === unit && Number(x.number) === number);
@@ -41,14 +42,14 @@ export function normalize(payload) {
     return { percent: Math.round(item.percentage), resetAt };
   };
   const quota = { fiveHour: find(3, 5), weekly: find(6, 1) };
-  if (!quota.fiveHour && !quota.weekly) throw new Error('未识别配额');
+  if (!quota.fiveHour && !quota.weekly) throw new Error('quotaUnavailable');
   return quota;
 }
 
-export function remaining(resetAt, now) {
+export function remaining(resetAt, now, language = resolveLanguage()) {
   if (!Number.isFinite(resetAt) || resetAt <= 0) return '';
   const minutes = Math.max(0, Math.ceil((resetAt - now) / 60_000));
-  if (!minutes) return '待重置';
+  if (!minutes) return t('resetDue', language);
   if (minutes >= 1440) {
     const hours = Math.floor(minutes % 1440 / 60);
     return `${Math.floor(minutes / 1440)}d${hours ? `${hours}h` : ''}`;
@@ -57,23 +58,25 @@ export function remaining(resetAt, now) {
   return `${minutes}m`;
 }
 
-export function formatLabel(cache, now) {
+export function formatLabel(cache, now, language = resolveLanguage()) {
   const quota = cache?.quota;
   const stale = Boolean(cache?.error) || (quota && now - cache.fetchedAt >= INTERVAL_MS);
   const parts = [];
-  for (const [name, window] of [['5h', quota?.fiveHour], ['周', quota?.weekly]]) {
+  for (const [name, window] of [['5h', quota?.fiveHour], [t('shortWeek', language), quota?.weekly]]) {
     if (!window) continue;
-    const reset = !stale && remaining(window.resetAt, now);
+    const reset = !stale && remaining(window.resetAt, now, language);
     parts.push(`${name}${window.percent}%${reset ? `·${reset}` : ''}`);
   }
-  let label = parts.length ? `GLM已用 ${parts.join(' ')}` : 'GLM --';
+  let label = parts.length ? `${t('used', language)} ${parts.join(' ')}` : 'GLM --';
+  const reason = cache?.error ? errorText(cache.error, language)
+    : cache?.message ? t(cache.message, language) : null;
   if (stale && quota) {
     const age = Math.max(0, Math.floor((now - cache.fetchedAt) / 60_000));
-    label += ` ⚠${cache.error || '过期'}·${age}m前`;
-  } else if (cache?.error) {
-    label += `（${cache.error}）`;
+    label += ` ⚠${reason || t('stale', language)}·${t('minutesAgo', language, { n: age })}`;
+  } else if (reason) {
+    label += ` (${reason})`;
   } else if (!quota) {
-    label += '（更新中）';
+    label += ` (${t('loading', language)})`;
   }
   return label.length <= 50 ? label : `${label.slice(0, 49)}…`;
 }
@@ -177,11 +180,11 @@ export async function getSnapshot({ env = process.env, now = Date.now, fetchImpl
   // No custom base URL means Claude Code may be using Anthropic directly.
   if (!base) return { label: '' };
   let url;
-  try { url = new URL(base); } catch { return { label: 'GLM --（地址无效）' }; }
+  try { url = new URL(base); } catch { return { message: 'invalidUrl' }; }
   // Switching to another provider must not send GLM credentials there.
   if (url.protocol !== 'https:' || !HOSTS.has(url.hostname)
     || url.port || url.username || url.password) return { label: '' };
-  if (!token || typeof token !== 'string') return { label: 'GLM --（未配置密钥）' };
+  if (!token || typeof token !== 'string') return { message: 'missingToken' };
 
   const cacheDir = join(configDir, 'glm-usage', 'cache');
   await mkdir(cacheDir, { recursive: true, mode: 0o700 });
@@ -190,7 +193,7 @@ export async function getSnapshot({ env = process.env, now = Date.now, fetchImpl
   const lockPath = `${cachePath}.lock`;
   let cache = await readJson(cachePath);
   if (availableAt(cache) > now()) {
-    if (interrupted(cache, now())) return { ...cache, error: '刷新未完成' };
+    if (interrupted(cache, now())) return { ...cache, error: 'refreshPending' };
     return cache.quota || cache.error ? cache : waitForFirstSnapshot(cachePath, lockPath, now);
   }
   const release = await acquire(lockPath);
@@ -218,18 +221,18 @@ export async function getSnapshot({ env = process.env, now = Date.now, fetchImpl
           const retry = response.headers.get('retry-after');
           const seconds = retry?.trim() ? Number(retry) : NaN;
           retryAfter = Number.isFinite(seconds) ? seconds * 1000 : Date.parse(retry) - now();
-          throw new Error('限流');
+          throw new Error('rateLimited');
         }
-        throw new Error([401, 403].includes(response.status) ? '鉴权失败' : `HTTP${response.status}`);
+        throw new Error([401, 403].includes(response.status) ? 'authFailed' : `HTTP${response.status}`);
       }
       const quota = normalize(await response.json());
       const fetchedAt = now();
       cache = { quota, fetchedAt, nextAttemptAt: fetchedAt + INTERVAL_MS, failures: 0 };
     } catch (error) {
       const failures = Math.min(5, (cache.failures || 0) + 1);
-      const known = /^(限流|鉴权失败|HTTP\d+|接口异常|数据格式变化|未识别配额)$/;
-      const reason = ['TimeoutError', 'AbortError'].includes(error.name) ? '超时'
-        : known.test(error.message) ? error.message : '网络异常';
+      const known = /^(rateLimited|authFailed|HTTP\d{3}|apiError|badResponse|quotaUnavailable)$/;
+      const reason = ['TimeoutError', 'AbortError'].includes(error.name) ? 'timeout'
+        : known.test(error.message) ? error.message : 'networkError';
       const backoff = Math.min(1_800_000, INTERVAL_MS * 2 ** (failures - 1));
       const delay = Math.min(86_400_000, Math.max(backoff, retryAfter || 0));
       const { pendingAt: _pendingAt, ...previous } = cache;
@@ -244,12 +247,19 @@ export async function getSnapshot({ env = process.env, now = Date.now, fetchImpl
 
 export async function getLabel(options = {}) {
   const snapshot = await getSnapshot(options);
-  return typeof snapshot.label === 'string' ? snapshot.label : formatLabel(snapshot, (options.now || Date.now)());
+  const language = options.language || resolveLanguage(options.env || process.env);
+  return typeof snapshot.label === 'string' ? snapshot.label : formatLabel(snapshot, (options.now || Date.now)(), language);
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   let label;
-  try { label = await getLabel(); }
-  catch { label = 'GLM --（本地缓存异常）'; }
+  const env = { ...process.env };
+  try {
+    if (env.CLAUDE_HUD_GLM_LANG == null) {
+      const settings = await readJson(join(getConfigDir(env), 'settings.json'));
+      if (typeof settings?.env?.CLAUDE_HUD_GLM_LANG === 'string') env.CLAUDE_HUD_GLM_LANG = settings.env.CLAUDE_HUD_GLM_LANG;
+    }
+    label = await getLabel({ env });
+  } catch { label = `GLM -- (${t('cacheError', resolveLanguage(env))})`; }
   process.stdout.write(`${JSON.stringify({ label })}\n`);
 }

@@ -24,7 +24,7 @@ const input = JSON.stringify({
   rate_limits: { five_hour: { used_percentage: 99, resets_at: Math.floor((now + 3600000) / 1000) } },
   transcript_path: '',
 });
-const env = { ...Object.fromEntries(Object.entries(process.env).filter(([key]) => !key.startsWith('ANTHROPIC_'))), CLAUDE_CONFIG_DIR: root, CLAUDE_CODE_PLUGIN_CACHE_DIR: join(root, 'plugins'), CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: '1', ANTHROPIC_BASE_URL: base, ANTHROPIC_AUTH_TOKEN: token, CLAUDE_HUD_DISABLE: '0', DEBUG: '', COLUMNS: '120' };
+const env = { ...Object.fromEntries(Object.entries(process.env).filter(([key]) => !key.startsWith('ANTHROPIC_'))), CLAUDE_CONFIG_DIR: root, CLAUDE_CODE_PLUGIN_CACHE_DIR: join(root, 'plugins'), CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: '1', ANTHROPIC_BASE_URL: base, ANTHROPIC_AUTH_TOKEN: token, CLAUDE_HUD_GLM_LANG: 'zh-Hans', CLAUDE_HUD_DISABLE: '0', DEBUG: '', COLUMNS: '120' };
 function execute(args, inputValue = '') {
   const result = spawnSync(process.execPath, args, { input: inputValue, encoding: 'utf8', env, timeout: 10000 });
   assert.equal(result.status, 0, result.stderr);
@@ -62,18 +62,25 @@ try {
   assert.match(execute([setupPath, 'check']), /检查通过/);
   assert.match(execute([setupPath, 'install']), /已安装/);
   assert.equal(JSON.parse(await readFile(join(root, 'settings.json'), 'utf8')).statusLine.refreshInterval, 15);
-  for (const language of ['en', 'zh-Hans']) {
+  const installedRuntime = join(root, 'claude-hud-glm/hud-with-glm.mjs');
+  for (const [hudLanguage, language, fiveLabel, weekLabel] of [
+    ['en', 'en', '5h used', 'Week used'],
+    ['zh-Hans', 'zh-Hans', '5h已用', '周已用'],
+    ['zh-Hant', 'zh-Hant', '5h已用', '週已用'],
+  ]) {
     const config = join(root, 'plugins/claude-hud/config.json');
     await mkdir(join(config, '..'), { recursive: true });
-    await writeFile(config, JSON.stringify({ language, lineLayout: 'expanded' }));
-    const output = execute(['hud-with-glm.mjs'], input);
+    await writeFile(config, JSON.stringify({ language: hudLanguage, lineLayout: 'expanded' }));
+    env.CLAUDE_HUD_GLM_LANG = language;
+    const output = execute([installedRuntime], input);
     assert.doesNotMatch(output, /\[claude-hud\] Error/);
     assert.ok(/Context|上下文/.test(output), output);
-    assert.ok(output.indexOf('5h已用') > output.search(/Context|上下文/), output);
-    assert.match(output, /5h已用 [█░]+ 30%/);
-    assert.match(output, /周已用 [█░]+ 45%/);
+    assert.ok(output.indexOf(fiveLabel) > output.search(/Context|上下文/), output);
+    assert.ok(output.includes(`${fiveLabel} `) && output.includes('30%'), output);
+    assert.ok(output.includes(`${weekLabel} `) && output.includes('45%'), output);
     assert.doesNotMatch(output, /99%/, 'Claude limits must not be presented as GLM quota');
   }
+  env.CLAUDE_HUD_GLM_LANG = 'zh-Hans';
   if (version === '0.14.0') {
     const override = join(root, 'claude-hud.json');
     for (const value of [{ lineLayout: 'compact' }, { elementOrder: ['project'] }]) {
@@ -83,22 +90,22 @@ try {
       assert.match(result.stderr, /expanded/);
     }
     await writeFile(override, JSON.stringify({ maxWidth: 40, forceMaxWidth: true }));
-    const narrow = execute(['hud-with-glm.mjs'], input).trim().split('\n');
+    const narrow = execute([installedRuntime], input).trim().split('\n');
     assert.ok(narrow.every(line => Bun.stringWidth(line) <= 40), 'respect HUD forced width');
     assert.match(narrow.join('\n'), /5h已用/);
     assert.match(narrow.join('\n'), /周已用/);
     await rm(override);
   }
   env.ANTHROPIC_BASE_URL = 'https://example.invalid';
-  const otherProvider = execute(['hud-with-glm.mjs'], input);
+  const otherProvider = execute([installedRuntime], input);
   assert.doesNotMatch(otherProvider, /5h已用|周已用/);
   assert.match(otherProvider, /Context|上下文/);
   env.ANTHROPIC_BASE_URL = '';
-  const directClaude = execute(['hud-with-glm.mjs'], input);
+  const directClaude = execute([installedRuntime], input);
   const nativeClaude = execute([join(hud, 'src/index.ts')], input);
   assert.equal(directClaude, nativeClaude, 'default Claude provider must retain the native HUD');
   assert.match(execute([setupPath, 'uninstall']), /已恢复/);
   assert.equal(JSON.parse(await readFile(join(root, 'settings.json'), 'utf8')).statusLine.command, 'original-hud');
   if (marketplace) claude(['plugin', 'uninstall', pluginId]);
-  console.log(`PASS: real Claude HUD ${version}, ${marketplace ? 'marketplace install, ' : ''}isolated setup, English/Chinese layout, quota bars, other provider, uninstall`);
+  console.log(`PASS: real Claude HUD ${version}, ${marketplace ? 'marketplace install, ' : ''}isolated setup, English/Simplified/Traditional Chinese layout, quota bars, other provider, uninstall`);
 } finally { await rm(root, { recursive: true, force: true }); }

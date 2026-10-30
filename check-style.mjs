@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { appendQuota } from './hud-with-glm.mjs';
 import { remaining } from './glm-hud.mjs';
+process.env.CLAUDE_HUD_GLM_LANG = 'zh-Hans';
 // Minimal palette fixture: production uses the installed HUD's real palette.
 const colors = {
   RESET: '\x1b[0m', label: text => text, warning: text => text,

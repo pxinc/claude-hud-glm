@@ -12,7 +12,7 @@ const payload = { success: true, data: { limits: [
   { type: 'TOKENS_LIMIT', unit: 3, number: 5, percentage: 0, nextResetTime: clock + 3600000 },
 ] } };
 const response = () => new Response(JSON.stringify(payload));
-const env = { CLAUDE_CONFIG_DIR: root, ANTHROPIC_BASE_URL: 'https://open.bigmodel.cn/api/anthropic', ANTHROPIC_AUTH_TOKEN: 'fixture-key-A' };
+const env = { CLAUDE_CONFIG_DIR: root, ANTHROPIC_BASE_URL: 'https://open.bigmodel.cn/api/anthropic', ANTHROPIC_AUTH_TOKEN: 'fixture-key-A', CLAUDE_HUD_GLM_LANG: 'zh-Hans' };
 let time = clock;
 let calls = 0;
 const options = { env, now: () => time, fetchImpl: async (url, opts) => {
@@ -87,7 +87,7 @@ try {
   assert.equal(sent, false, 'no credentials sent to unsupported providers');
   assert.match(await getLabel({ ...options, env: { ...env, ANTHROPIC_AUTH_TOKEN: '' } }), /未配置密钥/);
   await writeFile(join(root, 'settings.json'), JSON.stringify({ env }));
-  assert.match(await getLabel({ ...options, env: { CLAUDE_CONFIG_DIR: root } }), /GLM已用/);
+  assert.match(await getLabel({ ...options, env: { CLAUDE_CONFIG_DIR: root } }), /GLM used/);
   await writeFile(file, 'broken json');
   assert.match(await getLabel(options), /GLM已用/, 'corrupt cache recovers');
   const authError = await getLabel({ ...options, env: { ...env, ANTHROPIC_AUTH_TOKEN: 'fixture-key-C' }, fetchImpl: async () => new Response('{}', { status: 401 }) });
