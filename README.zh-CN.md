@@ -4,6 +4,8 @@
 
 在现有 [Claude HUD](https://github.com/jarrodwatts/claude-hud) 的 Context 后显示 **GLM Coding Plan 的 5 小时／周额度、进度条和重置倒计时**。
 
+状态标签和安装提示目前为中文。
+
 ```text
 [GLM] │ my-project git:(main)
 Context ████░░░░░░ 42% │ 5h已用 ███░░░░░░░ 30%·2h15m │ 周已用 ████░░░░░░ 45%·3d4h
@@ -12,19 +14,20 @@ Context ████░░░░░░ 42% │ 5h已用 ███░░░░░
 ## 功能
 
 - 复用 HUD 自带的条形和配色，保留原模型、项目、Context 和其他状态行。
-- 默认每 **5 分钟**自动刷新。消息触发的额外重绘读取缓存，并重新计算倒计时。
-- 同账户多窗口共享缓存和请求锁；不同平台／密钥的缓存隔离。
+- 默认每 **5 分钟**自动刷新。消息触发的额外重绘会重新计算倒计时，查询到期前使用缓存。
+- 相同平台和 API Key 的窗口共享缓存和请求锁；不同凭据的缓存隔离。
 - 超时、断网、限流时保留旧配额并提示数据年龄；失败后退避重试。
 - 不修改 claude-hud 插件文件，安装时备份状态栏配置，支持恢复。
 
 ## 前提
 
-- macOS 或 Linux、[Bun](https://bun.sh/) 1.3+；Windows 安装尚未验证。
+- macOS 或 Linux、[Bun](https://bun.sh/) 1.3+；安装器不支持 Windows。
 - 已安装 Claude Code 和 claude-hud，并完成 HUD setup。
+- Claude Code 版本需支持 `statusLine.refreshInterval`。
 - HUD 使用 **expanded 布局**，且显示 Context。compact 布局暂不支持。
 - 已将个人 GLM Coding Plan 配置到 Claude Code。
 
-本项目实测 claude-hud **0.0.11**。它调用 HUD 的内部渲染模块，后续上游版本可能需要适配；安装前会检查所需接口。升级 HUD 后建议再次运行 `bun setup.mjs check`。
+本项目实测 claude-hud **0.0.11** 和 **0.14.0**。它调用 HUD 的内部渲染模块，其他版本可能需要适配；安装前会检查所需接口。升级 HUD 后建议再次运行 `bun setup.mjs check`。
 
 若还没有安装 HUD，在 Claude Code 中运行：
 
@@ -46,9 +49,9 @@ Context ████░░░░░░ 42% │ 5h已用 ███░░░░░
 /claude-hud-glm:setup
 ```
 
-前两步注册本项目的第三方插件市场并安装插件，最后一步配置状态栏。Claude Code 的插件设置目前不能直接设置主 `statusLine`，因此插件安装完成后仍需执行一次 setup；该命令会使用现有安装器检查依赖并备份原状态栏。
+第一步注册本项目的第三方插件市场，第二步打开插件详情，选择安装范围后完成安装。最后一步配置状态栏。Claude Code 的插件设置目前不能直接设置主 `statusLine`，因此插件安装完成后仍需执行一次 setup；该命令会检查依赖并备份原状态栏。
 
-恢复时先运行 `/claude-hud-glm:uninstall`，再通过 `/plugin` 卸载插件。请先恢复状态栏，再卸载插件，以免丢失恢复命令入口。
+卸载时先运行 `/claude-hud-glm:uninstall`，再通过 `/plugin` 卸载插件，以保留恢复命令入口。
 
 ## 从源码安装
 
@@ -59,7 +62,7 @@ bun setup.mjs check
 bun setup.mjs install
 ```
 
-安装器自动寻找本机 Bun 和最新的完整 claude-hud 缓存版本，将三个运行文件复制到 `~/.claude/claude-hud-glm/`，设置 `statusLine.refreshInterval` 为 `300`。支持 `CLAUDE_CONFIG_DIR`。原有其他 Claude 设置保持不变。
+安装器使用运行 setup 的 Bun，寻找最新的完整 claude-hud 缓存版本，将三个运行文件复制到 `~/.claude/claude-hud-glm/`，设置 `statusLine.refreshInterval` 为 `300`。支持 `CLAUDE_CONFIG_DIR` 和 `CLAUDE_CODE_PLUGIN_CACHE_DIR`，保留其他 Claude 设置。
 
 不需要安装智谱的指令式查询插件。已有 Claude Code 窗口若没有自动更新，退出后重新启动。
 
@@ -80,11 +83,28 @@ bun setup.mjs install
 
 进度条和百分比表示**已用**。缺失额度显示 `--`；没有重置时刻则省略倒计时；超过重置时刻显示“待重置”，等待下一次服务端数据。`d`、`h`、`m` 分别表示天、小时、分钟。
 
-2 秒查询超时；429 尊重 `Retry-After`，连续失败会延长重试间隔。每 5 分钟刷新是正常情况下的目标频率，平台统计延迟、Claude Code 的调度和终端重绘均可能影响显示时间。关闭 Claude Code 后不在后台继续查询。
+2 秒查询超时；429 使用 `Retry-After`，上限为 24 小时，连续失败会延长重试间隔。每 5 分钟刷新是正常情况下的目标频率，平台统计延迟、Claude Code 的调度和终端重绘均可能影响显示时间。关闭 Claude Code 后不在后台继续查询。
 
-缓存只保存配额、重置时间和请求状态，不保存密钥。安装备份只保存 `statusLine` 字段，不复制带有凭据的完整设置。请勿将个人 Claude 配置、缓存或实际使用记录提交到仓库。
+缓存只保存配额、重置时间和请求状态，不保存密钥。安装备份只保存 `statusLine` 字段，不复制完整设置；但该字段中的命令本身可能含有敏感数据。请勿将个人 Claude 配置、缓存或实际使用记录提交到仓库。
+
+## 故障排查
+
+- 若没有显示额度进度条，检查 Claude HUD 是否使用 expanded 布局并显示 Context。更新插件或 HUD 后重新运行 `/claude-hud-glm:setup`。
+- 若额度显示 `--` 或警告，检查显示的原因以及 GLM 地址、凭据配置。接口未返回的额度会显示 `--`；请求失败时，有缓存则显示上次数据。
+- 若 setup 后仍显示旧状态栏，重启 Claude Code 会话。
 
 ## 更新与卸载
+
+插件安装方式：在终端中运行：
+
+```sh
+claude plugin marketplace update claude-hud-glm-marketplace
+claude plugin update claude-hud-glm@claude-hud-glm-marketplace
+```
+
+然后在 Claude Code 中运行 `/reload-plugins` 和 `/claude-hud-glm:setup`，将更新后的运行文件复制到安装目录。
+
+源码安装方式：在克隆目录中运行：
 
 ```sh
 git pull
@@ -108,13 +128,15 @@ bun setup.mjs uninstall
 bun run test
 ```
 
-测试使用临时目录和模拟凭据，不需要真实密钥、Claude Code 或 claude-hud。覆盖缓存边界、失败退避、并发去重、账户隔离、倒计时、窄屏布局、带空格／引号的安装路径、重复安装和卸载恢复。
+测试使用临时目录和模拟凭据，不需要真实密钥、Claude Code 或 claude-hud。覆盖缓存边界、失败退避、并发去重、凭据隔离、倒计时、窄屏布局、带空格／引号的安装路径、重复安装和卸载恢复。CI 还会测试[固定修订版的 claude-hud 0.14.0](https://github.com/jarrodwatts/claude-hud/tree/a235aa9e05e6b988a70dc54cf78fcbf6e98853c2)。
 
 独立查看 JSON 格式的用量文字：
 
 ```sh
 bun glm-hud.mjs
 ```
+
+版本变化见 [CHANGELOG.md](CHANGELOG.md)，开发和问题反馈见 [CONTRIBUTING.md](CONTRIBUTING.md)，漏洞报告方式见 [SECURITY.md](SECURITY.md)。
 
 ## 协议
 

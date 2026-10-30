@@ -2,9 +2,9 @@
 // Standalone claude-hud --extra-cmd adapter. No model calls or dependencies.
 import { readFile, writeFile, mkdir, rename, open, unlink, stat } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
-import { homedir } from 'node:os';
 import { createHash, randomUUID } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
+import { configDir as getConfigDir } from './hud-path.mjs';
 
 export const INTERVAL_MS = 300_000;
 const TIMEOUT_MS = 2_000;
@@ -100,11 +100,12 @@ async function acquire(path) {
 }
 
 export async function getSnapshot({ env = process.env, now = Date.now, fetchImpl = fetch } = {}) {
-  const configDir = env.CLAUDE_CONFIG_DIR || join(homedir(), '.claude');
+  const configDir = getConfigDir(env);
   const settings = await readJson(join(configDir, 'settings.json'));
   const base = env.ANTHROPIC_BASE_URL ?? settings?.env?.ANTHROPIC_BASE_URL;
   const token = env.ANTHROPIC_AUTH_TOKEN ?? settings?.env?.ANTHROPIC_AUTH_TOKEN;
-  if (!base) return { label: 'GLM --（未配置地址）' };
+  // No custom base URL means Claude Code may be using Anthropic directly.
+  if (!base) return { label: '' };
   let url;
   try { url = new URL(base); } catch { return { label: 'GLM --（地址无效）' }; }
   // Switching to another provider must not send GLM credentials there.

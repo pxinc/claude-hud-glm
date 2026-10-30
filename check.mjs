@@ -83,6 +83,7 @@ try {
 
   let sent = false;
   assert.equal(await getLabel({ ...options, env: { ...env, ANTHROPIC_BASE_URL: 'https://example.com' }, fetchImpl: async () => { sent = true; } }), '');
+  assert.equal(await getLabel({ ...options, env: { ...env, ANTHROPIC_BASE_URL: '' }, fetchImpl: async () => { sent = true; } }), '');
   assert.equal(sent, false, 'no credentials sent to unsupported providers');
   assert.match(await getLabel({ ...options, env: { ...env, ANTHROPIC_AUTH_TOKEN: '' } }), /未配置密钥/);
   await writeFile(join(root, 'settings.json'), JSON.stringify({ env }));

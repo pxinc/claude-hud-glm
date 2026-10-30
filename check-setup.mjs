@@ -1,15 +1,20 @@
 import assert from 'node:assert/strict';
-import { mkdtemp, mkdir, writeFile, readFile, rm } from 'node:fs/promises';
-import { join } from 'node:path';
-import { tmpdir } from 'node:os';
+import { mkdtemp, mkdir, writeFile, readFile, rm, cp } from 'node:fs/promises';
+import { join, resolve } from 'node:path';
+import { tmpdir, homedir } from 'node:os';
 import { execSync } from 'node:child_process';
 import { setup } from './setup.mjs';
-import { findHud } from './hud-path.mjs';
+import { configDir, findHud } from './hud-path.mjs';
 
 const root = await mkdtemp(join(tmpdir(), "hud-glm space's-"));
+const previousCacheRoot = process.env.CLAUDE_CODE_PLUGIN_CACHE_DIR;
+process.env.CLAUDE_CODE_PLUGIN_CACHE_DIR = join(root, 'plugins');
 const settingsPath = join(root, 'settings.json');
 const original = { statusLine: { type: 'command', command: 'original-hud', padding: 2 }, env: { ANTHROPIC_AUTH_TOKEN: 'fixture-only-not-a-real-key' } };
 try {
+  assert.equal(configDir({ CLAUDE_CONFIG_DIR: '  ' }), join(homedir(), '.claude'));
+  assert.equal(configDir({ CLAUDE_CONFIG_DIR: '~/custom-claude' }), join(homedir(), 'custom-claude'));
+  assert.equal(configDir({ CLAUDE_CONFIG_DIR: 'custom-claude' }), resolve('custom-claude'));
   await writeFile(settingsPath, JSON.stringify(original));
   await assert.rejects(() => setup('install', root), /未安装/);
   assert.deepEqual(JSON.parse(await readFile(settingsPath, 'utf8')), original);
@@ -28,6 +33,12 @@ try {
   }
   await mkdir(join(root, 'plugins/cache/claude-hud/claude-hud/0.0.12/src'), { recursive: true });
   assert.ok((await findHud(root)).includes('0.0.11'));
+  const customPlugins = join(root, 'custom-plugins');
+  await mkdir(join(customPlugins, 'cache/claude-hud'), { recursive: true });
+  await cp(join(root, 'plugins/cache/claude-hud/claude-hud'), join(customPlugins, 'cache/claude-hud/claude-hud'), { recursive: true });
+  process.env.CLAUDE_CODE_PLUGIN_CACHE_DIR = customPlugins;
+  assert.ok((await findHud(root)).startsWith(customPlugins));
+  process.env.CLAUDE_CODE_PLUGIN_CACHE_DIR = join(root, 'plugins');
   await setup('install', root);
   const installed = JSON.parse(await readFile(settingsPath, 'utf8'));
   assert.equal(installed.statusLine.refreshInterval, 300);
@@ -41,7 +52,7 @@ try {
   assert.deepEqual(JSON.parse(await readFile(statePath, 'utf8')).previous, original.statusLine);
   const output = execSync(installed.statusLine.command, {
     input: '{}', encoding: 'utf8', timeout: 5000,
-    env: { ...process.env, CLAUDE_CONFIG_DIR: root, ANTHROPIC_BASE_URL: 'https://example.invalid' },
+    env: { ...Object.fromEntries(Object.entries(process.env).filter(([key]) => !key.startsWith('ANTHROPIC_'))), CLAUDE_CONFIG_DIR: root, ANTHROPIC_BASE_URL: 'https://example.invalid' },
   });
   assert.match(output, /fixture HUD/);
   assert.match(output, /Context 42%/);
@@ -61,5 +72,16 @@ try {
   await writeFile(settingsPath, 'broken json');
   await assert.rejects(() => setup('install', root));
   assert.equal(await readFile(settingsPath, 'utf8'), 'broken json');
+  await writeFile(settingsPath, '');
+  await assert.rejects(() => setup('install', root));
+  assert.equal(await readFile(settingsPath, 'utf8'), '');
+  await writeFile(settingsPath, JSON.stringify(original));
+  await writeFile(statePath, '');
+  await assert.rejects(() => setup('install', root));
+  assert.equal(await readFile(statePath, 'utf8'), '');
   console.log('PASS: HUD discovery, missing dependency, complete-version selection, portable install, spaces/quotes, credential-free backup, repeat install, rollback, changed settings, invalid JSON');
-} finally { await rm(root, { recursive: true, force: true }); }
+} finally {
+  if (previousCacheRoot === undefined) delete process.env.CLAUDE_CODE_PLUGIN_CACHE_DIR;
+  else process.env.CLAUDE_CODE_PLUGIN_CACHE_DIR = previousCacheRoot;
+  await rm(root, { recursive: true, force: true });
+}

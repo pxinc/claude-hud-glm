@@ -1,4 +1,5 @@
 node_modules/
+.upstream-hud/
 .DS_Store
 .env
 .env.*

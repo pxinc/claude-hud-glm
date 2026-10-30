@@ -41,6 +41,8 @@ assert.match(stale, /超时/);
 assert.match(stale, /30%/);
 assert.deepEqual(appendQuota(initial, { label: '' }, colors, 6, 80), initial);
 assert.deepEqual(appendQuota(['[GLM]'], snapshot, colors, 6, 80), ['[GLM]']);
+const chinese = appendQuota(['[GLM]', '上下文 ████░░░░░░ 42%'], snapshot, colors, 6, 120, now).map(plain).join('\n');
+assert.ok(chinese.indexOf('5h已用') > chinese.indexOf('上下文'));
 assert.equal(remaining(null, now), '');
 assert.equal(remaining(NaN, now), '');
 assert.equal(remaining(now - 1, now), '待重置');

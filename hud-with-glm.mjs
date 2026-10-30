@@ -2,6 +2,7 @@
 // Reuse the installed HUD and its colors/bars, without changing plugin files.
 import { dirname, join, resolve } from 'node:path';
 import { pathToFileURL, fileURLToPath } from 'node:url';
+import { spawn } from 'node:child_process';
 import { getSnapshot, INTERVAL_MS, remaining } from './glm-hud.mjs';
 import { findHud } from './hud-path.mjs';
 
@@ -9,7 +10,7 @@ const stripAnsi = text => text.replace(/\x1b\[[0-9;]*m/g, '');
 
 export function appendQuota(lines, snapshot, colors, barWidth, columns, now = Date.now()) {
   if (snapshot.label === '') return lines;
-  const index = lines.findIndex(line => /^Context\b/.test(stripAnsi(line)));
+  const index = lines.findIndex(line => /^\s*(?:Context\b|上下文)/.test(stripAnsi(line)));
   if (index < 0) return lines; // Keep other layouts intact if Context is hidden.
   const { quotaBar, getQuotaColor, label, warning, RESET } = colors;
   const stale = Boolean(snapshot.error) || (snapshot.quota && now - snapshot.fetchedAt >= INTERVAL_MS);
@@ -43,6 +44,29 @@ export function appendQuota(lines, snapshot, colors, barWidth, columns, now = Da
   return [...lines.slice(0, index), ...additions, ...lines.slice(index + 1)];
 }
 
+function runNativeHud(hudPath, input) {
+  return new Promise((resolve, reject) => {
+    const child = spawn(process.execPath, ['--env-file', '/dev/null', hudPath], { stdio: ['pipe', 'pipe', 'inherit'] });
+    let output = '';
+    child.stdout.setEncoding('utf8');
+    child.stdout.on('data', chunk => { output += chunk; });
+    child.on('error', reject);
+    child.on('close', code => code === 0 ? resolve(output) : reject(new Error(`Claude HUD exited with status ${code}`)));
+    child.stdin.on('error', error => { if (error.code !== 'EPIPE') reject(error); });
+    child.stdin.end(input);
+  });
+}
+
+function getColors(palette, overrides) {
+  return {
+    label: text => palette.label(text, overrides),
+    warning: text => palette.warning(text, overrides),
+    quotaBar: (percent, width) => palette.quotaBar(percent, width, overrides),
+    getQuotaColor: percent => palette.getQuotaColor(percent, overrides),
+    RESET: palette.RESET,
+  };
+}
+
 export async function run(hudPath) {
   hudPath ||= await findHud();
   const src = dirname(resolve(hudPath));
@@ -54,7 +78,22 @@ export async function run(hudPath) {
     import(pathToFileURL(join(src, 'stdin.ts')).href),
   ]);
   const stdin = await stdinModule.readStdin();
-  const snapshot = stdin ? await getSnapshot().catch(() => ({ label: 'GLM --（本地缓存异常）' })) : { label: '' };
+  const enabled = stdin && !(typeof hud.isHudDisabled === 'function' && hud.isHudDisabled());
+  const snapshot = enabled ? await getSnapshot().catch(() => ({ label: 'GLM --（本地缓存异常）' })) : { label: '' };
+  if (typeof rendering.renderLines === 'function' && typeof terminal.getTerminalWidth === 'function') {
+    const configModule = await import(pathToFileURL(join(src, 'config.ts')).href);
+    const config = await configModule.loadConfig();
+    // Do not mistake Claude rate limits for GLM quota. Other providers keep the original input.
+    const input = stdin && snapshot.label !== '' ? { ...stdin, rate_limits: null } : stdin;
+    const raw = await runNativeHud(hudPath, input ? JSON.stringify(input) : '');
+    const lines = raw.replace(/\n$/, '').split('\n');
+    if (raw === '' || snapshot.label === '') { process.stdout.write(raw); return; }
+    const columns = terminal.getTerminalWidth();
+    const outputWidth = config.forceMaxWidth && config.maxWidth ? config.maxWidth : (columns ?? config.maxWidth ?? 0);
+    const width = columns === null || columns >= 100 ? 10 : columns >= 60 ? 6 : 4;
+    for (const line of appendQuota(lines, snapshot, getColors(palette, config.colors), width, outputWidth)) console.log(line);
+    return;
+  }
   await hud.main({
     readStdin: async () => stdin,
     parseExtraCmdArg: () => null,
@@ -67,10 +106,7 @@ export async function run(hudPath) {
       } finally {
         console.log = output;
       }
-      const colors = Object.fromEntries(['label', 'warning', 'quotaBar', 'getQuotaColor'].map(name => [
-        name, (...args) => palette[name](...args, ctx.config.colors),
-      ]));
-      colors.RESET = palette.RESET;
+      const colors = getColors(palette, ctx.config.colors);
       const columns = Number.parseInt(process.env.COLUMNS || '', 10)
         || process.stdout.columns || process.stderr.columns || 0;
       let result = lines;

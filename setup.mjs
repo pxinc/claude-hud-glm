@@ -33,11 +33,20 @@ async function checkHud(dir) {
     import(pathToFileURL(join(src, 'utils/terminal.ts')).href),
     import(pathToFileURL(join(src, 'stdin.ts')).href),
   ]);
-  if ([main.main, renderer.render, colors.quotaBar, colors.getQuotaColor, colors.label, colors.warning, terminal.getAdaptiveBarWidth, stdin.readStdin].some(x => typeof x !== 'function')) {
-    throw new Error('claude-hud 接口不兼容，未修改配置；已验证版本为 0.0.11。');
+  const required = [main.main, renderer.render, colors.quotaBar, colors.getQuotaColor, colors.label, colors.warning, stdin.readStdin];
+  const legacy = typeof terminal.getAdaptiveBarWidth === 'function';
+  const modern = typeof terminal.getTerminalWidth === 'function' && typeof renderer.renderLines === 'function';
+  const modernConfig = modern ? await import(pathToFileURL(join(src, 'config.ts')).href) : null;
+  if (required.some(x => typeof x !== 'function') || (!legacy && !modern)
+    || (modern && typeof modernConfig.loadConfig !== 'function')) {
+    throw new Error('claude-hud 接口不兼容，未修改配置；请查看项目文档中的已验证版本。');
   }
   const hudConfig = JSON.parse(await readText(join(dir, 'plugins', 'claude-hud', 'config.json')) || '{}');
-  if (hudConfig.lineLayout === 'compact' || (Array.isArray(hudConfig.elementOrder) && !hudConfig.elementOrder.includes('context'))) {
+  const override = modern ? JSON.parse(await readText(join(dir, 'claude-hud.json')) || '{}') : {};
+  const combined = { ...hudConfig, ...override };
+  const effective = typeof modernConfig?.mergeConfig === 'function' ? modernConfig.mergeConfig(combined) : combined;
+  const layout = effective.lineLayout ?? (typeof effective.layout === 'string' ? 'compact' : effective.layout?.lineLayout);
+  if (layout === 'compact' || (Array.isArray(effective.elementOrder) && !effective.elementOrder.includes('context'))) {
     throw new Error('需要启用 claude-hud expanded 布局并显示 Context；请先运行 /claude-hud:configure。');
   }
   return path;
@@ -54,9 +63,9 @@ export async function setup(action, dir = configDir()) {
   const settingsPath = join(dir, 'settings.json');
   const statePath = join(folder, 'install-state.json');
   const original = await readText(settingsPath);
-  const settings = JSON.parse(original || '{}'); // Invalid JSON must never be overwritten.
+  const settings = JSON.parse(original ?? '{}'); // Invalid JSON must never be overwritten.
   const stateText = await readText(statePath);
-  let state = stateText ? JSON.parse(stateText) : null;
+  let state = stateText === null ? null : JSON.parse(stateText);
 
   if (action === 'uninstall') {
     if (!state) return '尚未安装，无需恢复。';
