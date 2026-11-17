@@ -46,6 +46,35 @@ export function normalize(payload) {
   return quota;
 }
 
+function cardExpiry(value) {
+  if (typeof value === 'number' && Number.isFinite(value) && value > 0) {
+    const timestamp = value < 1e12 ? value * 1000 : value;
+    return Number.isFinite(new Date(timestamp).getTime()) ? timestamp : null;
+  }
+  if (typeof value !== 'string' || !value.trim()) return null;
+  const raw = value.trim();
+  if (/^\d{10,13}$/.test(raw)) return cardExpiry(Number(raw));
+  if (!/^\d{4}-\d{2}-\d{2}(?:[ T]\d{2}:\d{2}(?::\d{2}(?:\.\d{1,9})?)?(?:Z|[+-]\d{2}:?\d{2})?)?$/i.test(raw)) return null;
+  // The provider returns timezone-free card dates in China Standard Time.
+  let date = raw.replace(' ', 'T');
+  if (date.length === 10) date += 'T00:00:00';
+  if (!/(?:Z|[+-]\d{2}:?\d{2})$/i.test(date)) date += '+08:00';
+  const parsed = Date.parse(date);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
+}
+
+export function normalizeResetCards(payload) {
+  if (payload?.success === false) throw new Error('apiError');
+  const data = payload?.data;
+  if (!data || (!Array.isArray(data.fiveHourResets) && !Array.isArray(data.weekResets))) {
+    throw new Error('badResponse');
+  }
+  const dates = list => Array.isArray(list)
+    ? list.filter(item => item?.available === true).map(item => cardExpiry(item.expireTime)) : null;
+  // Retain only expiration times, not card identifiers or account details.
+  return { fiveHour: dates(data.fiveHourResets), weekly: dates(data.weekResets) };
+}
+
 export function remaining(resetAt, now, language = resolveLanguage()) {
   if (!Number.isFinite(resetAt) || resetAt <= 0) return '';
   const minutes = Math.max(0, Math.ceil((resetAt - now) / 60_000));
@@ -138,11 +167,11 @@ async function acquire(path) {
   }
 }
 
-async function waitForFirstSnapshot(cachePath, lockPath, now) {
+async function waitForFirstSnapshot(cachePath, lockPath, now, field) {
   const deadline = performance.now() + FIRST_FETCH_WAIT_MS;
   while (performance.now() < deadline) {
     const current = await readJson(cachePath);
-    if (current?.quota || current?.error) return current;
+    if (current?.[field] || current?.error) return current;
     try {
       await stat(lockPath);
     } catch (error) {
@@ -171,7 +200,7 @@ function availableAt(cache) {
   );
 }
 
-export async function getSnapshot({ env = process.env, now = Date.now, fetchImpl = fetch } = {}) {
+async function getCachedSnapshot(field, { env = process.env, now = Date.now, fetchImpl = fetch } = {}) {
   const configDir = getConfigDir(env);
   const needsSettings = env.ANTHROPIC_BASE_URL == null || env.ANTHROPIC_AUTH_TOKEN == null;
   const settings = needsSettings ? await readJson(join(configDir, 'settings.json')) : null;
@@ -189,17 +218,17 @@ export async function getSnapshot({ env = process.env, now = Date.now, fetchImpl
   const cacheDir = join(configDir, 'glm-usage', 'cache');
   await mkdir(cacheDir, { recursive: true, mode: 0o700 });
   const identity = createHash('sha256').update(`${url.origin}\0${token}`).digest('hex').slice(0, 32);
-  const cachePath = join(cacheDir, `${identity}.json`);
+  const cachePath = join(cacheDir, `${identity}${field === 'cards' ? '.cards' : ''}.json`);
   const lockPath = `${cachePath}.lock`;
   let cache = await readJson(cachePath);
   if (availableAt(cache) > now()) {
     if (interrupted(cache, now())) return { ...cache, error: 'refreshPending' };
-    return cache.quota || cache.error ? cache : waitForFirstSnapshot(cachePath, lockPath, now);
+    return cache[field] || cache.error ? cache : waitForFirstSnapshot(cachePath, lockPath, now, field);
   }
   const release = await acquire(lockPath);
   if (!release) {
     cache = await readJson(cachePath);
-    return cache?.quota || cache?.error ? cache : waitForFirstSnapshot(cachePath, lockPath, now);
+    return cache?.[field] || cache?.error ? cache : waitForFirstSnapshot(cachePath, lockPath, now, field);
   }
   try {
     // Another process may have filled the cache between our first read and lock.
@@ -211,7 +240,9 @@ export async function getSnapshot({ env = process.env, now = Date.now, fetchImpl
     await save(cachePath, cache);
     let retryAfter = 0;
     try {
-      const response = await fetchImpl(`${url.origin}/api/monitor/usage/quota/limit`, {
+      const endpoint = field === 'cards'
+        ? '/api/biz/customer-package-reset/list?targetType=PERSONAL' : '/api/monitor/usage/quota/limit';
+      const response = await fetchImpl(`${url.origin}${endpoint}`, {
         headers: { Authorization: token, 'Accept-Language': 'en-US,en' },
         signal: AbortSignal.timeout(TIMEOUT_MS),
         redirect: 'error',
@@ -225,9 +256,10 @@ export async function getSnapshot({ env = process.env, now = Date.now, fetchImpl
         }
         throw new Error([401, 403].includes(response.status) ? 'authFailed' : `HTTP${response.status}`);
       }
-      const quota = normalize(await response.json());
+      const payload = await response.json();
+      const value = field === 'cards' ? normalizeResetCards(payload) : normalize(payload);
       const fetchedAt = now();
-      cache = { quota, fetchedAt, nextAttemptAt: fetchedAt + INTERVAL_MS, failures: 0 };
+      cache = { [field]: value, fetchedAt, nextAttemptAt: fetchedAt + INTERVAL_MS, failures: 0 };
     } catch (error) {
       const failures = Math.min(5, (cache.failures || 0) + 1);
       const known = /^(rateLimited|authFailed|HTTP\d{3}|apiError|badResponse|quotaUnavailable)$/;
@@ -244,6 +276,9 @@ export async function getSnapshot({ env = process.env, now = Date.now, fetchImpl
     await release();
   }
 }
+
+export function getSnapshot(options = {}) { return getCachedSnapshot('quota', options); }
+export function getResetCards(options = {}) { return getCachedSnapshot('cards', options); }
 
 export async function getLabel(options = {}) {
   const snapshot = await getSnapshot(options);

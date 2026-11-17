@@ -43,6 +43,12 @@ try {
     quota: { fiveHour: { percent: 30, resetAt: now + 3600000 }, weekly: { percent: 45, resetAt: now + 86400000 } },
     fetchedAt: now, nextAttemptAt: now + 300000,
   }));
+  const cardCachePath = join(cache, `${identity}.cards.json`);
+  const cardCache = {
+    cards: { fiveHour: [now + 86400000, now + 172800000], weekly: [now + 259200000] },
+    fetchedAt: now, nextAttemptAt: now + 300000,
+  };
+  await writeFile(cardCachePath, JSON.stringify(cardCache));
   let setupPath = 'setup.mjs';
   const remoteMarketplace = process.argv.includes('--remote-marketplace');
   const marketplace = remoteMarketplace || process.argv.includes('--marketplace');
@@ -63,10 +69,10 @@ try {
   assert.match(execute([setupPath, 'install']), /已安装/);
   assert.equal(JSON.parse(await readFile(join(root, 'settings.json'), 'utf8')).statusLine.refreshInterval, 15);
   const installedRuntime = join(root, 'claude-hud-glm/hud-with-glm.mjs');
-  for (const [hudLanguage, language, fiveLabel, weekLabel] of [
-    ['en', 'en', '5h used', 'Week used'],
-    ['zh-Hans', 'zh-Hans', '5h已用', '周已用'],
-    ['zh-Hant', 'zh-Hant', '5h已用', '週已用'],
+  for (const [hudLanguage, language, fiveLabel, weekLabel, fiveCards, weekCards] of [
+    ['en', 'en', '5h used', 'Week used', '5h card×2', 'Week card×1'],
+    ['zh-Hans', 'zh-Hans', '5h已用', '周已用', '5h卡×2', '周卡×1'],
+    ['zh-Hant', 'zh-Hant', '5h已用', '週已用', '5h卡×2', '週卡×1'],
   ]) {
     const config = join(root, 'plugins/claude-hud/config.json');
     await mkdir(join(config, '..'), { recursive: true });
@@ -78,9 +84,18 @@ try {
     assert.ok(output.indexOf(fiveLabel) > output.search(/Context|上下文/), output);
     assert.ok(output.includes(`${fiveLabel} `) && output.includes('30%'), output);
     assert.ok(output.includes(`${weekLabel} `) && output.includes('45%'), output);
+    assert.ok(output.indexOf(fiveCards) > output.indexOf(weekLabel) && output.indexOf(weekCards) > output.indexOf(fiveCards), output);
     assert.doesNotMatch(output, /99%/, 'Claude limits must not be presented as GLM quota');
   }
   env.CLAUDE_HUD_GLM_LANG = 'zh-Hans';
+  await writeFile(cardCachePath, JSON.stringify({ ...cardCache, error: 'networkError' }));
+  const cardFailure = execute([installedRuntime], input);
+  assert.match(cardFailure, /5h已用/);
+  assert.doesNotMatch(cardFailure, /5h卡|周卡/, 'failed card queries hide potentially stale card data');
+  await writeFile(cardCachePath, JSON.stringify({ ...cardCache, cards: { fiveHour: [], weekly: [] } }));
+  const emptyCards = execute([installedRuntime], input);
+  assert.doesNotMatch(emptyCards, /5h卡|周卡/, 'zero cards leave the original layout unchanged');
+  await writeFile(cardCachePath, JSON.stringify(cardCache));
   if (version === '0.14.0') {
     const override = join(root, 'claude-hud.json');
     for (const value of [{ lineLayout: 'compact' }, { elementOrder: ['project'] }]) {

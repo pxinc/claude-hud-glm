@@ -5,7 +5,7 @@ import { spawn } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { getSnapshot, formatLabel } from './glm-hud.mjs';
+import { getSnapshot, getResetCards, formatLabel } from './glm-hud.mjs';
 import { resolveLanguage } from './i18n.mjs';
 
 const base = 'https://open.bigmodel.cn/api/anthropic';
@@ -14,16 +14,20 @@ if (process.argv[2] === '--worker') {
   const env = { CLAUDE_CONFIG_DIR: root, ANTHROPIC_BASE_URL: base, ANTHROPIC_AUTH_TOKEN: token, CLAUDE_HUD_GLM_LANG: language };
   process.stdout.write('READY\n');
   await new Promise(resolve => process.stdin.once('data', resolve));
-  const result = await getSnapshot({ env, now: simulatedNow ? () => Number(simulatedNow) : Date.now, fetchImpl: async () => {
+  const result = await (resultKind === 'cards' ? getResetCards : getSnapshot)({ env, now: simulatedNow ? () => Number(simulatedNow) : Date.now, fetchImpl: async () => {
     await appendFile(count, 'x');
     await new Promise(resolve => setTimeout(resolve, 500));
     if (resultKind === 'error') return new Response('{}', { status: 503 });
+    if (resultKind === 'cards') return Response.json({ success: true, data: {
+      fiveHourResets: [{ available: true, expireTime: '2029-01-01 00:00:00' }],
+      weekResets: [{ available: true, expireTime: '2029-02-01 00:00:00' }],
+    } });
     return new Response(JSON.stringify({ success: true, data: { limits: [
       { type: 'TOKENS_LIMIT', unit: 3, number: 5, percentage: 31 },
       { type: 'TOKENS_LIMIT', unit: 6, number: 1, percentage: 48 },
     ] } }));
   } });
-  process.stdout.write(`${JSON.stringify({ five: result.quota?.fiveHour?.percent, week: result.quota?.weekly?.percent, error: result.error, label: formatLabel(result, simulatedNow ? Number(simulatedNow) : Date.now(), resolveLanguage(env)) })}\n`);
+  process.stdout.write(`${JSON.stringify({ five: result.quota?.fiveHour?.percent, week: result.quota?.weekly?.percent, cardFive: result.cards?.fiveHour?.length, cardWeek: result.cards?.weekly?.length, error: result.error, label: formatLabel(result, simulatedNow ? Number(simulatedNow) : Date.now(), resolveLanguage(env)) })}\n`);
 } else {
   const root = await mkdtemp(join(tmpdir(), 'glm-windows-'));
   const children = [];
@@ -71,6 +75,18 @@ if (process.argv[2] === '--worker') {
     assert.equal((await readFile(count, 'utf8')).length, 1, 'cold-start windows issue one request');
     assert.ok(complete(await windows(count, sameKey)), 'warm-cache windows should display cached data');
     assert.equal((await readFile(count, 'utf8')).length, 1, 'warm-cache windows issue no new requests');
+
+    const cardCount = join(root, 'card-requests.txt');
+    await writeFile(cardCount, '');
+    const cardStart = Date.now();
+    const cardWindows = () => Array(8).fill('fixture-shared-card-key');
+    const cardResults = await windows(cardCount, cardWindows(), 'cards', Array(8).fill(root), cardStart);
+    assert.ok(cardResults.every(result => result.cardFive === 1 && result.cardWeek === 1), 'windows share card data');
+    assert.equal((await readFile(cardCount, 'utf8')).length, 1, 'card requests deduplicate across processes');
+    await windows(cardCount, cardWindows(), 'cards', Array(8).fill(root), cardStart + 299999);
+    assert.equal((await readFile(cardCount, 'utf8')).length, 1, 'card cache remains valid before five minutes');
+    await windows(cardCount, cardWindows(), 'cards', Array(8).fill(root), cardStart + 300000);
+    assert.equal((await readFile(cardCount, 'utf8')).length, 2, 'card refresh is shared after five minutes');
 
     const differentKeys = Array.from({ length: 8 }, (_, i) => `fixture-key-${i % 2 ? 'B' : 'C'}`);
     assert.ok(complete(await windows(count, differentKeys)), 'different keys should each receive a result');

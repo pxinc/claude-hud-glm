@@ -3,11 +3,26 @@
 import { dirname, join, resolve } from 'node:path';
 import { pathToFileURL, fileURLToPath } from 'node:url';
 import { spawn } from 'node:child_process';
-import { getSnapshot, INTERVAL_MS, remaining } from './glm-hud.mjs';
+import { getSnapshot, getResetCards, INTERVAL_MS, remaining } from './glm-hud.mjs';
 import { findHud } from './hud-path.mjs';
 import { resolveLanguage, t, errorText } from './i18n.mjs';
 
 const stripAnsi = text => text.replace(/\x1b\[[0-9;]*m/g, '');
+
+function cardLabel(records, name, now, language) {
+  if (!Array.isArray(records)) return '';
+  const active = records.filter(value => value === null || (Number.isFinite(value) && value > now));
+  if (!active.length) return '';
+  let expiry = t('cardExpiryUnknown', language);
+  if (active.every(Number.isFinite)) {
+    const date = new Date(active.reduce((first, value) => Math.min(first, value), Infinity));
+    const pad = value => String(value).padStart(2, '0');
+    const year = date.getFullYear() === new Date(now).getFullYear() ? '' : `${date.getFullYear()}/`;
+    const time = `${year}${pad(date.getMonth() + 1)}/${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}`;
+    expiry = t('cardExpiry', language, { date: time });
+  }
+  return `${t(name, language)}×${active.length}·${expiry}`;
+}
 
 export function appendQuota(lines, snapshot, colors, barWidth, columns, now = Date.now(), language = resolveLanguage()) {
   if (snapshot.label === '') return lines;
@@ -23,6 +38,10 @@ export function appendQuota(lines, snapshot, colors, barWidth, columns, now = Da
     }
     const reset = remaining(window.resetAt, now, language);
     parts.push(`${label(name)} ${quotaBar(window.percent, barWidth)} ${getQuotaColor(window.percent)}${window.percent}%${RESET}${reset ? label(`·${reset}`) : ''}`);
+  }
+  for (const [records, name] of [[snapshot.cards?.fiveHour, 'fiveHourCards'], [snapshot.cards?.weekly, 'weeklyCards']]) {
+    const cards = cardLabel(records, name, now, language);
+    if (cards) parts.push(label(cards));
   }
   if (stale || snapshot.message || snapshot.label) {
     const age = snapshot.quota ? `·${t('minutesAgo', language, { n: Math.max(0, Math.floor((now - snapshot.fetchedAt) / 60_000)) })}` : '';
@@ -82,7 +101,11 @@ export async function run(hudPath) {
   const stdin = await stdinModule.readStdin();
   const enabled = stdin && !(typeof hud.isHudDisabled === 'function' && hud.isHudDisabled());
   const language = resolveLanguage();
-  const snapshot = enabled ? await getSnapshot().catch(() => ({ message: 'cacheError' })) : { label: '' };
+  const [snapshot, cards] = enabled ? await Promise.all([
+    getSnapshot().catch(() => ({ message: 'cacheError' })),
+    getResetCards().catch(() => ({})),
+  ]) : [{ label: '' }, {}];
+  if (cards.cards && !cards.error) snapshot.cards = cards.cards;
   if (typeof rendering.renderLines === 'function' && typeof terminal.getTerminalWidth === 'function') {
     const configModule = await import(pathToFileURL(join(src, 'config.ts')).href);
     const config = await configModule.loadConfig();

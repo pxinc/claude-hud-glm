@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { appendQuota } from './hud-with-glm.mjs';
 import { remaining } from './glm-hud.mjs';
 process.env.CLAUDE_HUD_GLM_LANG = 'zh-Hans';
+process.env.TZ = 'UTC';
 // Minimal palette fixture: production uses the installed HUD's real palette.
 const colors = {
   RESET: '\x1b[0m', label: text => text, warning: text => text,
@@ -54,4 +55,26 @@ assert.equal(remaining(snapshot.quota.fiveHour.resetAt, now + 3 * 60_000), '2h12
 const expired = appendQuota(initial, { ...snapshot, quota: { fiveHour: { percent: 30, resetAt: now - 1 } } }, colors, 6, 120, now).map(plain).join('\n');
 assert.match(expired, /30%·待重置/);
 assert.ok(!partial.includes('undefined') && !partial.includes('NaN'));
+const cardNow = Date.parse('2026-11-17T00:00:00Z');
+const cardSnapshot = { ...snapshot, fetchedAt: cardNow, cards: {
+  fiveHour: [Date.parse('2026-11-30T09:00:00Z'), Date.parse('2026-11-25T10:00:00Z'), cardNow - 1],
+  weekly: [Date.parse('2027-01-02T12:30:00Z')],
+} };
+for (const columns of [40, 60, 80, 120]) {
+  const lines = appendQuota(initial, cardSnapshot, colors, columns < 60 ? 4 : columns < 100 ? 6 : 10, columns, cardNow);
+  const text = lines.map(plain).join('\n');
+  assert.ok(text.indexOf('5h卡×2·11/25 10:00到期') > text.indexOf('周已用'));
+  assert.ok(text.indexOf('周卡×1·2027/01/02 12:30到期') > text.indexOf('5h卡×2'));
+  assert.ok(lines.every(line => Bun.stringWidth(line) <= columns), 'card segments respect narrow terminals');
+  assert.equal(lines.at(-1), initial.at(-1));
+}
+const noCards = { ...snapshot, cards: { fiveHour: [], weekly: [] } };
+assert.deepEqual(appendQuota(initial, noCards, colors, 6, 120, now), appendQuota(initial, snapshot, colors, 6, 120, now));
+const unknownCardDate = appendQuota(initial, { ...snapshot, cards: { fiveHour: [null] } }, colors, 6, 120, now).map(plain).join('\n');
+assert.match(unknownCardDate, /5h卡×1·到期--/);
+assert.doesNotMatch(unknownCardDate, /周卡/);
+const englishCards = appendQuota(initial, cardSnapshot, colors, 6, 120, cardNow, 'en').map(plain).join('\n');
+assert.match(englishCards, /5h card×2·exp 11\/25 10:00/);
+const traditionalCards = appendQuota(initial, cardSnapshot, colors, 6, 120, cardNow, 'zh-Hant').map(plain).join('\n');
+assert.match(traditionalCards, /週卡×1·2027\/01\/02 12:30到期/);
 console.log('PASS: native styles, Context placement, 40/60/80/120-column wrapping, independent countdowns, minute/hour/day boundaries, missing/expired reset times, stale data');

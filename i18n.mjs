@@ -1,6 +1,7 @@
 export const messages = {
   en: {
     fiveHour: '5h used', week: 'Week used', shortWeek: 'wk', used: 'GLM used',
+    fiveHourCards: '5h card', weeklyCards: 'Week card', cardExpiry: 'exp {date}', cardExpiryUnknown: 'expiry --',
     resetDue: 'reset due', stale: 'stale', loading: 'loading', minutesAgo: '{n}m ago',
     invalidUrl: 'invalid URL', missingToken: 'missing API key', cacheError: 'cache error',
     timeout: 'timeout', rateLimited: 'rate limited', authFailed: 'authentication failed',
@@ -23,6 +24,7 @@ export const messages = {
   },
   'zh-Hans': {
     fiveHour: '5h已用', week: '周已用', shortWeek: '周', used: 'GLM已用',
+    fiveHourCards: '5h卡', weeklyCards: '周卡', cardExpiry: '{date}到期', cardExpiryUnknown: '到期--',
     resetDue: '待重置', stale: '过期', loading: '更新中', minutesAgo: '{n}m前',
     invalidUrl: '地址无效', missingToken: '未配置密钥', cacheError: '本地缓存异常',
     timeout: '超时', rateLimited: '限流', authFailed: '鉴权失败',
@@ -45,6 +47,7 @@ export const messages = {
   },
   'zh-Hant': {
     fiveHour: '5h已用', week: '週已用', shortWeek: '週', used: 'GLM已用',
+    fiveHourCards: '5h卡', weeklyCards: '週卡', cardExpiry: '{date}到期', cardExpiryUnknown: '到期--',
     resetDue: '待重置', stale: '過期', loading: '更新中', minutesAgo: '{n}m前',
     invalidUrl: '網址無效', missingToken: '未設定金鑰', cacheError: '本機快取異常',
     timeout: '逾時', rateLimited: '請求受限', authFailed: '驗證失敗',

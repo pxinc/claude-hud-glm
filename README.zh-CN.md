@@ -2,17 +2,20 @@
 
 [English](README.md) | 简体中文
 
-在现有 [Claude HUD](https://github.com/jarrodwatts/claude-hud) 的 Context 后显示 **GLM Coding Plan 的 5 小时／周额度、进度条和重置倒计时**。
+在现有 [Claude HUD](https://github.com/jarrodwatts/claude-hud) 的 Context 后显示 **GLM Coding Plan 的 5 小时／周额度、进度条、重置倒计时和可用重置卡**。
 
 ```text
 [GLM] │ my-project git:(main)
-Context ████░░░░░░ 42% │ 5h已用 ███░░░░░░░ 30%·2h15m │ 周已用 ████░░░░░░ 45%·3d4h
+Context ████░░░░░░ 42% │ 5h已用 ███░░░░░░░ 30%·2h15m │ 周已用 ████░░░░░░ 45%·3d4h │ 5h卡×2·11/25 18:00到期 │ 周卡×1·12/01 09:00到期
 ```
+
+卡数量和到期时间为示意数据。
 
 ## 功能
 
 - 复用 HUD 自带的条形和配色，保留原模型、项目、Context 和其他状态行。
-- 状态栏约每 **15 秒**重绘一次，以便各窗口读取共享数据；每份共享缓存的额度接口最多每 5 分钟查询一次。消息可触发额外重绘，但冷却期内不会增加查询。
+- 显示可用 5 小时卡和周卡的数量与最近到期时间；没有可用卡时不显示对应项目。
+- 状态栏约每 **15 秒**重绘一次，以便各窗口读取共享数据；额度和重置卡接口各自独立冷却 5 分钟，每轮最多合计发送 2 次 HTTP 请求。
 - 使用相同 Claude 配置目录、平台和 API Key 的窗口共享缓存和请求锁；不同凭据或配置目录使用独立缓存。
 - 超时、断网、限流时保留旧配额并提示数据年龄；失败后退避重试。
 - 不修改 claude-hud 插件文件，安装时备份状态栏配置，支持恢复。
@@ -60,7 +63,7 @@ bun setup.mjs check
 bun setup.mjs install
 ```
 
-安装器使用运行 setup 的 Bun，寻找最新的完整 claude-hud 缓存版本，将四个运行文件复制到 `~/.claude/claude-hud-glm/`，设置 `statusLine.refreshInterval` 为 `15` 秒。支持 `CLAUDE_CONFIG_DIR` 和 `CLAUDE_CODE_PLUGIN_CACHE_DIR`，保留其他 Claude 设置。额度查询仍受独立的 5 分钟冷却限制。
+安装器使用运行 setup 的 Bun，寻找最新的完整 claude-hud 缓存版本，将四个运行文件复制到 `~/.claude/claude-hud-glm/`，设置 `statusLine.refreshInterval` 为 `15` 秒。支持 `CLAUDE_CONFIG_DIR` 和 `CLAUDE_CODE_PLUGIN_CACHE_DIR`，保留其他 Claude 设置。两个接口分别使用 5 分钟冷却。
 
 不需要安装智谱的指令式查询插件。已有 Claude Code 窗口若没有自动更新，退出后重新启动。
 
@@ -97,13 +100,15 @@ bun setup.mjs install
 
 配额数据来自官方插件也使用的 `/api/monitor/usage/quota/limit` 接口；接口字段和可用性可能变化。更多信息见[智谱官方插件说明](https://docs.bigmodel.cn/cn/coding-plan/extension/usage-query-plugin)。
 
-进度条和百分比表示**已用**。缺失额度显示 `--`；没有重置时刻则省略倒计时；超过重置时刻显示“待重置”，等待下一次服务端数据。`d`、`h`、`m` 分别表示天、小时、分钟。
+可用重置卡来自独立的非公开接口 `/api/biz/customer-package-reset/list?targetType=PERSONAL`。该查询只读，插件不会使用重置卡。国内个人账户已实测，国际接口尚未使用真实账户验证。卡查询不可用或失败时隐藏卡信息，不影响额度进度条；有卡但到期时间未知时显示 `到期--`。
+
+进度条和百分比表示**已用**。缺失额度显示 `--`；没有重置时刻则省略倒计时；超过重置时刻显示“待重置”，等待下一次服务端数据。`d`、`h`、`m` 分别表示天、小时、分钟。卡到期时间按本地时区显示，接口未标时区的时间按 UTC+8 解析；过期卡在重绘时隐藏。
 
 2 秒查询超时。首次没有缓存时，并发窗口最多等待约 2.2 秒以复用首次查询结果；刷新已有额度时继续显示缓存。请求结束后至少等待 5 分钟再尝试查询；请求中断时仍保留预留的冷却期。429 使用 `Retry-After`，上限为 24 小时，连续失败会延长重试间隔。
 
 各窗口的 Context 和重绘时机相互独立。空闲时，一个窗口成功更新共享额度后，其他窗口通常会在下次重绘时显示，约需 15 秒或更少；平台统计延迟、网络失败、Claude Code 调度和终端重绘可能延长这一时间。更频繁的重绘会让每个窗口更频繁地启动本地 HUD，但不会缩短查询冷却期。关闭 Claude Code 后不在后台继续查询。
 
-缓存只保存配额、重置时间和请求状态，不保存密钥。安装备份只保存 `statusLine` 字段，不复制完整设置；但该字段中的命令本身可能含有敏感数据。请勿将个人 Claude 配置、缓存或实际使用记录提交到仓库。
+缓存只保存配额、卡到期时间和请求状态，不保存密钥或卡 ID。安装备份只保存 `statusLine` 字段，不复制完整设置；但该字段中的命令本身可能含有敏感数据。请勿将个人 Claude 配置、缓存或实际使用记录提交到仓库。
 
 ## 故障排查
 
@@ -146,7 +151,7 @@ bun setup.mjs uninstall
 bun run test
 ```
 
-测试使用临时目录和模拟凭据，不需要真实密钥、Claude Code 或 claude-hud。覆盖语言选择、翻译显示与旧缓存错误、缓存边界、失败退避、多进程并发去重与恢复、凭据隔离、倒计时、窄屏布局、带空格／引号的安装路径、重复安装和卸载恢复。CI 还会测试[固定修订版的 claude-hud 0.14.0](https://github.com/jarrodwatts/claude-hud/tree/a235aa9e05e6b988a70dc54cf78fcbf6e98853c2)。
+测试使用临时目录和模拟凭据，不需要真实密钥、Claude Code 或 claude-hud。覆盖重置卡过滤与到期时间、两个接口各自的冷却、语言选择、翻译显示与旧缓存错误、缓存边界、失败退避、多进程并发去重与恢复、凭据隔离、倒计时、窄屏布局、带空格／引号的安装路径、重复安装和卸载恢复。CI 还会测试[固定修订版的 claude-hud 0.14.0](https://github.com/jarrodwatts/claude-hud/tree/a235aa9e05e6b988a70dc54cf78fcbf6e98853c2)。
 
 独立查看 JSON 格式的用量文字：
 

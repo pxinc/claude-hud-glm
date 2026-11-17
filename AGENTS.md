@@ -4,7 +4,7 @@
 
 This project adds GLM Coding Plan quota bars and reset countdowns after Context in an existing Claude HUD status line. Start with [README.md](README.md) for user-facing setup; [README.zh-CN.md](README.zh-CN.md) is its Chinese counterpart. Keep both aligned when changing behavior or installation instructions.
 
-- `glm-hud.mjs` reads GLM credentials, fetches and normalizes quota data, and manages the five-minute cache, request lock, first-fetch wait, timeout, and backoff. `check-multiwindow.mjs` tests separate processes against mock responses.
+- `glm-hud.mjs` reads GLM credentials, fetches and normalizes quota and reset-card data, and manages separate five-minute caches, request locks, first-fetch waits, timeouts, and backoff. `check-multiwindow.mjs` tests separate processes against mock responses.
 - `hud-with-glm.mjs` calls the installed HUD's internal modules and adds quota bars after Context. `hud-path.mjs` locates an installed HUD version.
 - `i18n.mjs` selects English, Simplified Chinese, or Traditional Chinese from an explicit override or locale. Cache errors use language-independent codes; keep legacy cache translation and cross-language cache sharing intact.
 - `setup.mjs` checks compatibility, installs the adapter, and restores the previous `statusLine` on uninstall. It must preserve unrelated settings and refuse to overwrite later status-line changes.
@@ -14,7 +14,7 @@ This project adds GLM Coding Plan quota bars and reset countdowns after Context 
 
 The integration touches a user's Claude settings. Do not run installation, uninstallation, or a live quota query against the real user environment unless the task calls for it. Use a temporary `CLAUDE_CONFIG_DIR` and mock credentials when testing. Never print or commit API keys, user settings, cache files, or real quota data. Preserve the official HTTPS allowlist, credential isolation, cache locking, and error handling when changing the fetch path.
 
-The runtime depends on Bun and Claude HUD internals; versions 0.0.11 and 0.14.0 have been tested. The Chinese GLM endpoint was tested with a real account on 0.0.11; the 0.14.0 compatibility check uses simulated quota data. CI checks a pinned 0.14.0 source revision. Keep the five-minute query cooldown, 15-second redraw, expanded layout behavior, missing/stale-data indicators, and existing status-line restoration intact unless the task explicitly changes them. The international Z.ai endpoint has not been verified with a real account.
+The runtime depends on Bun and Claude HUD internals; versions 0.0.11 and 0.14.0 have been tested. The Chinese GLM endpoints were tested with a real account on 0.0.11; the 0.14.0 compatibility check uses simulated data. CI checks a pinned 0.14.0 source revision. Keep each endpoint's five-minute query cooldown, 15-second redraw, expanded layout behavior, missing/stale-data indicators, and existing status-line restoration intact unless the task explicitly changes them. Reset-card queries are read-only; do not add a card-use operation without an explicit request. The international Z.ai endpoints have not been verified with a real account.
 
 ## Validation
 

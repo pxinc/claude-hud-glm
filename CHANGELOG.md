@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.6.0
+
+- Show available five-hour and weekly reset-card counts and nearest expiration when present.
+- Share a separate five-minute card cache and request lock across windows.
+- Hide card information on query failure without changing quota bars.
+
 ## 0.5.0
 
 - Add English, Simplified Chinese, and Traditional Chinese status and setup messages.

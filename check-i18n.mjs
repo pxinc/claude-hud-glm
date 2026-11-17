@@ -29,7 +29,7 @@ assert.equal(remaining(1000, 1001, 'en'), 'reset due');
 assert.equal(remaining(1000, 1001, 'zh-Hans'), '待重置');
 assert.equal(remaining(1000, 1001, 'zh-Hant'), '待重置');
 
-const keys = ['fiveHour','week','shortWeek','used','resetDue','stale','loading','minutesAgo','invalidUrl','missingToken','cacheError','timeout','rateLimited','authFailed','apiError','badResponse','quotaUnavailable','networkError','refreshPending','unknownError','settingsChanged','incompatibleHud','layoutRequired','unsupportedWindows','setupUsage','hudCheckPassed','notInstalled','alreadyRestored','restoreConflict','restored','installConflict','installed','hudNotInstalled','hudNotFound'];
+const keys = ['fiveHour','week','shortWeek','used','fiveHourCards','weeklyCards','cardExpiry','cardExpiryUnknown','resetDue','stale','loading','minutesAgo','invalidUrl','missingToken','cacheError','timeout','rateLimited','authFailed','apiError','badResponse','quotaUnavailable','networkError','refreshPending','unknownError','settingsChanged','incompatibleHud','layoutRequired','unsupportedWindows','setupUsage','hudCheckPassed','notInstalled','alreadyRestored','restoreConflict','restored','installConflict','installed','hudNotInstalled','hudNotFound'];
 for (const language of ['en', 'zh-Hans', 'zh-Hant']) {
   for (const key of keys) {
     assert.ok(Object.hasOwn(messages[language], key), `${language}: missing ${key}`);

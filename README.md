@@ -2,20 +2,21 @@
 
 English | [简体中文](README.zh-CN.md)
 
-Display **GLM Coding Plan five-hour and weekly quota bars and reset countdowns** after Context in your existing [Claude HUD](https://github.com/jarrodwatts/claude-hud) status line.
+Display **GLM Coding Plan five-hour and weekly quota bars, reset countdowns, and available reset cards** after Context in your existing [Claude HUD](https://github.com/jarrodwatts/claude-hud) status line.
 
 ```text
 [GLM] │ my-project git:(main)
-Context ████░░░░░░ 42% │ 5h used ███░░░░░░░ 30%·2h15m │ Week used ████░░░░░░ 45%·3d4h
+Context ████░░░░░░ 42% │ 5h used ███░░░░░░░ 30%·2h15m │ Week used ████░░░░░░ 45%·3d4h │ 5h card×2·exp 11/25 18:00 │ Week card×1·exp 12/01 09:00
 ```
 
-Percentages show the amount **used**. The adapter runs locally without model calls or a background daemon.
+Percentages show the amount **used**. Card counts and dates in the example are illustrative. The adapter runs locally without model calls or a background daemon.
 
 ## Features
 
 - Reuses Claude HUD's bars and colors and keeps its model, project, Context, and other status lines.
-- Redraws the status line about every **15 seconds** so windows pick up shared data; the quota endpoint is queried at most once per five minutes for each shared cache. Messages can trigger additional redraws without additional queries during the cooldown.
-- Shares a cache and request lock across windows using the same Claude configuration directory, provider, and API key. Other credentials or configuration directories use separate caches.
+- Shows the count and nearest expiration of available five-hour and weekly reset cards; a category with no available cards is omitted.
+- Redraws the status line about every **15 seconds** so windows pick up shared data. The quota and reset-card endpoints each have a separate five-minute cooldown; a refresh can make up to two HTTP requests in total.
+- Shares caches and request locks across windows using the same Claude configuration directory, provider, and API key. Other credentials or configuration directories use separate caches.
 - Keeps the last quota and indicates its age on timeout, network error, or rate limiting; backs off after failures.
 - Installs without modifying Claude HUD's plugin files and backs up the previous status line for restoration.
 
@@ -62,7 +63,7 @@ bun setup.mjs check
 bun setup.mjs install
 ```
 
-The installer uses the Bun executable running the setup command, locates the newest complete Claude HUD cache, copies four runtime files to `~/.claude/claude-hud-glm/`, and sets `statusLine.refreshInterval` to `15` seconds. It supports `CLAUDE_CONFIG_DIR` and `CLAUDE_CODE_PLUGIN_CACHE_DIR` and preserves other Claude settings. Quota queries remain limited by a separate five-minute cooldown.
+The installer uses the Bun executable running the setup command, locates the newest complete Claude HUD cache, copies four runtime files to `~/.claude/claude-hud-glm/`, and sets `statusLine.refreshInterval` to `15` seconds. It supports `CLAUDE_CONFIG_DIR` and `CLAUDE_CODE_PLUGIN_CACHE_DIR` and preserves other Claude settings. Both endpoints have independent five-minute cooldowns.
 
 The separate official GLM usage-query plugin is not required. If an existing Claude Code window does not update automatically, restart it.
 
@@ -97,13 +98,15 @@ The Chinese personal Coding Plan was tested with a real account using Claude HUD
 
 Quota data comes from `/api/monitor/usage/quota/limit`, also used by the [official usage-query plugin](https://docs.bigmodel.cn/cn/coding-plan/extension/usage-query-plugin). Endpoint fields and availability may change.
 
-Missing quota windows show `--`. Missing reset times omit the countdown. Once a reset time passes, `reset due` means the adapter is waiting for fresh server data. `d`, `h`, and `m` mean days, hours, and minutes.
+Available reset cards come from the separate, undocumented `/api/biz/customer-package-reset/list?targetType=PERSONAL` endpoint. This is a read-only query; the adapter does not use cards. The Chinese personal endpoint was checked with a real account; the international endpoint has not been verified with a real account. An unavailable or failed card query hides card information without affecting quota bars. A card with an unknown expiration shows `expiry --`.
+
+Missing quota windows show `--`. Missing reset times omit the countdown. Once a reset time passes, `reset due` means the adapter is waiting for fresh server data. `d`, `h`, and `m` mean days, hours, and minutes. Card expiration is displayed in the local timezone; timezone-free values returned by the endpoint are interpreted as UTC+8. Expired cards are hidden on redraw.
 
 Requests time out after two seconds. On a cold start, concurrent windows without cached quota wait about 2.2 seconds at most for the first request; existing quota stays available during a refresh. After a completed request, the next attempt waits at least five minutes; an interrupted request retains its reserved cooldown. For HTTP 429 the adapter uses `Retry-After`, capped at 24 hours; repeated failures extend the retry interval.
 
 Each window has its own Context and redraw schedule. When idle, another window normally displays a successful shared update on its next redraw, about 15 seconds later or less. Provider reporting delays, network failures, Claude Code scheduling, and terminal redraw behavior can extend that delay. Redrawing more often starts the local HUD more often in each window; it does not shorten the query cooldown. Queries stop when Claude Code closes.
 
-The cache contains quota values, reset times, and request state, not the API key. The installation backup contains only the `statusLine` field, not the complete settings file; a command in that field could itself contain sensitive data. Do not commit your personal Claude configuration, cache, or actual usage records.
+The caches contain quota values, card expiration times, and request state, not the API key or card IDs. The installation backup contains only the `statusLine` field, not the complete settings file; a command in that field could itself contain sensitive data. Do not commit your personal Claude configuration, cache, or actual usage records.
 
 ## Troubleshooting
 
@@ -146,7 +149,7 @@ No dependency installation is required:
 bun run test
 ```
 
-Tests use temporary directories and mock credentials; they do not require a real key, Claude Code, or Claude HUD. They cover locale selection, translated output and old cache errors, cache boundaries, retry backoff, multi-process request deduplication and recovery, credential isolation, countdowns, narrow layouts, installation paths with spaces or quotes, repeated installation, and restoration. CI also tests against a [pinned Claude HUD 0.14.0 revision](https://github.com/jarrodwatts/claude-hud/tree/a235aa9e05e6b988a70dc54cf78fcbf6e98853c2).
+Tests use temporary directories and mock credentials; they do not require a real key, Claude Code, or Claude HUD. They cover reset-card filtering and expiration, independent endpoint cooldowns, locale selection, translated output and old cache errors, cache boundaries, retry backoff, multi-process request deduplication and recovery, credential isolation, countdowns, narrow layouts, installation paths with spaces or quotes, repeated installation, and restoration. CI also tests against a [pinned Claude HUD 0.14.0 revision](https://github.com/jarrodwatts/claude-hud/tree/a235aa9e05e6b988a70dc54cf78fcbf6e98853c2).
 
 To inspect a quota label in JSON format:
 
